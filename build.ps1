@@ -9,6 +9,8 @@ $env:CGO_ENABLED = "0"
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 
+& (Join-Path $PSScriptRoot "scripts\versioninfo.ps1") -Version $Version
+
 Write-Host "Сборка autolectures.exe..."
 $ld = "-s -w -H windowsgui"
 if ($Version) { $ld += " -X main.Version=$Version" }
