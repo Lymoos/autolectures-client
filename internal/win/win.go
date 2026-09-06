@@ -28,8 +28,6 @@ var (
 	pSetWindowPos                  = user32.NewProc("SetWindowPos")
 	pGetClientRect                 = user32.NewProc("GetClientRect")
 	pGetWindowRect                 = user32.NewProc("GetWindowRect")
-	pRegisterHotKey                = user32.NewProc("RegisterHotKey")
-	pUnregisterHotKey              = user32.NewProc("UnregisterHotKey")
 	pReleaseCapture                = user32.NewProc("ReleaseCapture")
 	pLoadCursorW                   = user32.NewProc("LoadCursorW")
 	pSetForegroundWindow           = user32.NewProc("SetForegroundWindow")
@@ -93,7 +91,6 @@ const (
 	WM_NCLBUTTONDOWN = 0x00A1
 	WM_COMMAND       = 0x0111
 	WM_SYSCOMMAND    = 0x0112
-	WM_HOTKEY        = 0x0312
 	WM_LBUTTONUP     = 0x0202
 	WM_LBUTTONDBLCLK = 0x0203
 	WM_RBUTTONUP     = 0x0205
@@ -136,12 +133,6 @@ const (
 
 	SM_CXSIZEFRAME    = 32
 	SM_CXPADDEDBORDER = 92
-
-	MOD_ALT      = 0x0001
-	MOD_CONTROL  = 0x0002
-	MOD_SHIFT    = 0x0004
-	MOD_WIN      = 0x0008
-	MOD_NOREPEAT = 0x4000
 
 	MF_STRING       = 0x0000
 	MF_SEPARATOR    = 0x0800
@@ -381,12 +372,6 @@ func FillClient(hwnd, hdc uintptr, colorBGR uint32) {
 	_, _, _ = pFillRect.Call(hdc, uintptr(unsafe.Pointer(&r)), brush)
 	_, _, _ = pDeleteObject.Call(brush)
 }
-
-func RegisterHotKey(hwnd uintptr, id int, mods, vk uint32) bool {
-	r, _, _ := pRegisterHotKey.Call(hwnd, uintptr(id), uintptr(mods), uintptr(vk))
-	return r != 0
-}
-func UnregisterHotKey(hwnd uintptr, id int) { _, _, _ = pUnregisterHotKey.Call(hwnd, uintptr(id)) }
 
 func MessageBox(hwnd uintptr, title, text string) {
 	_, _, _ = pMessageBoxW.Call(hwnd, uintptr(unsafe.Pointer(utf16(text))), uintptr(unsafe.Pointer(utf16(title))), 0x30)

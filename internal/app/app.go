@@ -45,7 +45,6 @@ const (
 	menuOpen   = 1
 	menuToggle = 2
 	menuQuit   = 3
-	hotkeyID   = 0xA17E
 )
 
 type Assets struct {
@@ -91,14 +90,17 @@ type App struct {
 		x, y, w, h float64
 		dpr        float64
 	}
-	updating    bool
-	tab         int
-	mailStatus  string
-	idleHint    string
-	tgLinked    bool
-	tgUser      string
-	updProgress int
-	updNotes    string
+	updating     bool
+	bootUpdate   bool
+	updNotified  string
+	needNickname bool
+	tab          int
+	mailStatus   string
+	idleHint     string
+	tgLinked     bool
+	tgUser       string
+	updProgress  int
+	updNotes     string
 }
 
 func (a *App) dispatch(fn func()) { a.wnd.Dispatch(fn) }
@@ -113,7 +115,7 @@ func Run(assets Assets, opt Options) int {
 		return 0
 	}
 
-	a := &App{opt: opt, cfg: cfg, updProgress: -1}
+	a := &App{opt: opt, cfg: cfg, updProgress: -1, bootUpdate: true}
 	a.transparent = cfg.TransparentWindow()
 
 	webview.ChromiumFlags("--disable-background-timer-throttling --disable-renderer-backgrounding " +
@@ -189,7 +191,7 @@ func Run(assets Assets, opt Options) int {
 		}
 	}()
 	go func() {
-		for range time.Tick(6 * time.Hour) {
+		for range time.Tick(10 * time.Minute) {
 			a.updater.Check()
 		}
 	}()
@@ -213,9 +215,16 @@ func Run(assets Assets, opt Options) int {
 }
 
 func (a *App) shutdown() {
+	// Сторож на случай, если почта или веб-сокет закрываются слишком долго:
+	// процесс должен освободить файл, иначе обновление ждёт его выхода.
+	watchdog := time.AfterFunc(4*time.Second, func() {
+		logger.Warnf("Приложение", "Службы не остановились за 4 с — выхожу принудительно")
+		os.Exit(0)
+	})
 	a.engine.Stop()
 	a.mail.Stop()
 	a.hub.Stop()
+	watchdog.Stop()
 	logger.Infof("Приложение", "Завершение работы")
 }
 
@@ -228,7 +237,6 @@ func (a *App) createServices(assets Assets) {
 	a.mail = mailmon.New()
 	a.updater = update.New(a.apiC.HTTP(), a.opt.Version, a.cfg.DataDir())
 	a.eco = newEco()
-	a.eco.SetEnabled(a.cfg.EcoMode())
 	a.engine = session.New(a.stage, a.auth, a.hub, a.notifier, strings.Join(assets.Scripts, "\n"), a.dispatch)
 	a.engine.SetNickname(a.cfg.Nickname())
 	a.engine.SetVolume(a.cfg.Volume())
@@ -245,6 +253,7 @@ func (a *App) wireServices() {
 		}
 		if !active {
 			a.marked = false
+			a.needNickname = false
 		}
 		a.emitState()
 	}
@@ -280,7 +289,16 @@ func (a *App) wireServices() {
 		a.emitState()
 	}
 	a.engine.OnNicknameRequired = func() {
-		logger.Warnf(src, "Укажите имя участника в параметрах (Аккаунт → Параметры)")
+		if a.cfg.Nickname() != "" {
+			return
+		}
+		a.needNickname = true
+		logger.Warnf(src, "Форма входа просит имя участника — спрашиваю его в окне приложения")
+		a.emitState()
+	}
+	a.engine.OnParticipants = func(n int) {
+		logger.Debugf(src, "Участников на трансляции: %d", n)
+		a.emitState()
 	}
 	a.engine.OnError = func(msg string) { a.idleHint = msg; a.emitState() }
 	a.engine.OnShutdown = func() { a.quitting = true; a.wnd.Quit() }
@@ -333,7 +351,7 @@ func (a *App) wireServices() {
 
 	a.cfg.OnChange(func(key string) {
 		switch key {
-		case "nickname", "group", "mail_monitoring", "volume", "boss_key", "transparent_window":
+		case "nickname", "group", "mail_monitoring", "volume", "transparent_window":
 			a.account.PushSettings()
 		}
 		a.dispatch(func() {
@@ -344,8 +362,6 @@ func (a *App) wireServices() {
 				go a.scheduler.Refresh()
 			case "volume":
 				a.engine.SetVolume(a.cfg.Volume())
-			case "boss_key":
-				a.registerHotKey()
 			}
 			a.emitState()
 		})
@@ -378,6 +394,7 @@ func (a *App) wireServices() {
 	}
 
 	a.mail.OnStatus = func(t string) { a.dispatch(func() { a.mailStatus = t; a.emitState() }) }
+	a.mail.OnSettings = func(config.Mail) { a.dispatch(a.emitState) }
 	a.mail.OnError = func(t string) { a.dispatch(func() { a.mailStatus = "Ошибка: " + t; a.emitState() }) }
 	a.mail.OnInvitation = func(inv mailmon.Invitation, subject string) {
 		a.scheduler.AddInvitation(inv, subject)
@@ -395,9 +412,17 @@ func (a *App) wireServices() {
 	a.updater.OnFound = func(v, notes string) {
 		a.dispatch(func() {
 			a.updNotes = notes
-			a.notifier.Notify(proto.EventUpdateAvailable, "Доступно обновление клиента "+v+". "+truncate(notes, 200), map[string]any{"version": v})
+			if a.updNotified != v {
+				a.updNotified = v
+				logger.Infof(src, "Доступна версия %s", v)
+				a.notifier.Notify(proto.EventUpdateAvailable, "Доступно обновление клиента "+v+". "+truncate(notes, 200), map[string]any{"version": v})
+			}
 			a.emitState()
-			a.autoUpdate(v)
+			// Сама ставится только версия, найденная при запуске. Дальше, пока
+			// человек работает, клиент лишь показывает кнопку «Обновить».
+			if a.bootUpdate {
+				a.autoUpdate(v)
+			}
 		})
 	}
 	a.updater.OnProgress = func(p int) {
@@ -420,7 +445,13 @@ func (a *App) wireServices() {
 			a.emitState()
 		})
 	}
-	a.updater.OnRestart = func() { a.dispatch(func() { a.quitting = true; a.wnd.Quit() }) }
+	a.updater.OnRestart = func() {
+		a.dispatch(func() {
+			a.quitting = true
+			a.wnd.Hide() // окно уходит сразу, дальше только выход процесса
+			a.wnd.Quit()
+		})
+	}
 }
 
 func truncate(s string, n int) string {
@@ -444,8 +475,7 @@ func (a *App) wireWindow() {
 		a.quitting = true
 		return true
 	}
-	a.wnd.OnHotKey = func(int) { a.toggleBossKey() }
-	a.wnd.OnTray = a.toggleBossKey
+	a.wnd.OnTray = a.toggleWindow
 	a.wnd.OnMenu = func(id int) {
 		switch id {
 		case menuOpen:
@@ -465,29 +495,13 @@ func (a *App) wireWindow() {
 		ID    int
 		Title string
 	}{{menuOpen, "Открыть окно"}, {menuToggle, "Запустить сессию"}, {0, ""}, {menuQuit, "Выход"}})
-	a.registerHotKey()
 }
 
-func (a *App) registerHotKey() {
-	win.UnregisterHotKey(a.wnd.HWnd, hotkeyID)
-	seq := a.cfg.BossKey()
-	mods, vk, ok := win.ParseHotKey(seq)
-	if !ok {
-		logger.Warnf("Горячая клавиша", "Комбинация %s не поддерживается", seq)
-		return
-	}
-	if win.RegisterHotKey(a.wnd.HWnd, hotkeyID, mods, vk) {
-		logger.Infof("Горячая клавиша", "Boss Key: %s", seq)
-	} else {
-		logger.Warnf("Горячая клавиша", "Не удалось зарегистрировать %s (занята другой программой?)", seq)
-	}
-}
-
-func (a *App) toggleBossKey() {
+func (a *App) toggleWindow() {
 	if a.wnd.Visible() {
 		a.wnd.Hide()
 		a.eco.SetWindowVisible(false)
-		logger.Debugf(src, "Окно скрыто в трей (Boss Key)")
+		logger.Debugf(src, "Окно свёрнуто в трей, клиент продолжает работу")
 	} else {
 		a.restore()
 	}
@@ -509,6 +523,7 @@ func (a *App) autoUpdate(version string) {
 		logger.Infof(src, "Обновление %s поставится после окончания сессии", version)
 		return
 	}
+	a.bootUpdate = false
 	a.updating = true
 	a.updProgress = 0
 	logger.Infof(src, "Ставлю обновление %s автоматически", version)
@@ -630,7 +645,7 @@ func (a *App) stopGlobalSession() {
 	logger.Infof(src, "Глобальная сессия остановлена")
 	a.emitState()
 	// Обновление, отложенное из-за лекции, ставим сразу после её конца.
-	if a.updater.Available() {
+	if a.bootUpdate && a.updater.Available() {
 		a.autoUpdate(a.updater.Latest())
 	}
 }
@@ -675,7 +690,8 @@ func (a *App) registerHandlers() {
 		a.layout()
 		return nil, nil
 	})
-	h("watch", func(*Call) (any, error) { a.eco.SetUserEntered(true); return nil, nil })
+	h("watch", func(*Call) (any, error) { a.eco.SetManual(false); return nil, nil })
+	h("eco", func(c *Call) (any, error) { a.eco.SetManual(c.Bool("on")); return nil, nil })
 	h("window", func(c *Call) (any, error) {
 		switch c.Str("cmd") {
 		case "drag":
@@ -685,7 +701,7 @@ func (a *App) registerHandlers() {
 		case "maximize":
 			a.wnd.ToggleMaximize()
 		case "tray":
-			a.toggleBossKey()
+			a.toggleWindow()
 		case "close":
 			a.wnd.Close()
 		}
@@ -718,24 +734,27 @@ func (a *App) registerHandlers() {
 		if s := c.Str("server"); s != "" {
 			a.cfg.SetServerURL(s)
 		}
-		a.cfg.SetBossKey(c.Str("bossKey"))
 		return nil, nil
 	})
 
 	h("mailTest", func(c *Call) (any, error) {
 		c.Async()
 		s := config.Mail{Host: c.Str("host"), Port: c.Int("port"), User: c.Str("user"),
-			Password: c.Str("password"), Sender: strings.TrimSpace(c.Str("sender"))}
+			Password: c.Str("password"), Sender: strings.TrimSpace(c.Str("sender")),
+			Security: strings.TrimSpace(c.Str("security"))}
 		if s.Port == 0 {
 			s.Port = 993
 		}
 		go func() {
-			err := a.mail.Test(s)
+			// Test может вернуть исправленные настройки: порт и шифрование
+			// подбираются, если заданная пара не заработала.
+			ok, err := a.mail.Test(s)
 			if err == nil {
 				a.dispatch(func() {
-					a.cfg.SetMailSettings(s)
-					a.mail.SetSettings(s)
-					logger.Infof("Почта", "Ящик %s подключён, разбираю письма от «%s»", s.User, s.SenderFilter())
+					a.cfg.SetMailSettings(ok)
+					a.mail.SetSettings(ok)
+					logger.Infof("Почта", "Ящик %s подключён (%s:%d, %s), разбираю письма от «%s»",
+						ok.User, ok.Host, ok.Port, ok.Mode(), ok.SenderFilter())
 					if a.globalSession && a.cfg.MailMonitoring() {
 						a.mail.Start()
 					}
@@ -806,6 +825,17 @@ func (a *App) registerHandlers() {
 		return nil, nil
 	})
 
+	h("setNickname", func(c *Call) (any, error) {
+		n := strings.TrimSpace(c.Str("nickname"))
+		if n == "" {
+			return nil, errors.New("укажите имя, которое увидят на трансляции")
+		}
+		a.cfg.SetNickname(n)
+		a.needNickname = false
+		logger.Infof(src, "Имя участника задано: %s", n)
+		a.emitState()
+		return nil, nil
+	})
 	h("setGroup", func(c *Call) (any, error) {
 		g := c.Str("group")
 		if g == a.cfg.Group() {
@@ -911,19 +941,22 @@ func (a *App) snapshot() map[string]any {
 		"session": map[string]any{
 			"active": a.engine.Active(), "state": a.engine.State().Title(), "title": a.engine.CurrentTitle(),
 			"seconds": a.engine.Seconds(), "marked": a.marked, "url": a.engine.CurrentURL(),
+			"participants": a.engine.Participants(),
 		},
 		"stageShown": a.stageShown(),
-		"eco":        map[string]any{"lowPower": a.eco.LowPower(), "reason": a.eco.Reason()},
+		"eco":        map[string]any{"lowPower": a.eco.LowPower(), "manual": a.eco.Manual(), "reason": a.eco.Reason()},
 		"mail": map[string]any{"configured": m.Valid(), "host": m.Host, "port": m.Port, "user": m.User,
-			"sender": m.SenderFilter(), "monitoring": a.cfg.MailMonitoring(), "status": a.mailStatus},
+			"sender": m.SenderFilter(), "security": m.Security, "monitoring": a.cfg.MailMonitoring(),
+			"status": a.mailStatus},
 		"telegram":   map[string]any{"linked": a.tgLinked, "username": a.tgUser},
 		"esco":       map[string]any{"ok": a.escoOK, "loginActive": a.loginActive, "name": a.escoName},
 		"attendance": map[string]any{"status": a.attendStatus, "text": a.attendText},
 		"volume":     a.cfg.Volume(),
 		"update":     map[string]any{"available": a.updater.Available(), "version": a.updater.Latest(), "notes": a.updNotes, "progress": a.updProgress},
 		"settings": map[string]any{
-			"nickname": a.cfg.Nickname(), "group": a.cfg.Group(), "server": a.cfg.ServerURL(), "bossKey": a.cfg.BossKey(),
+			"nickname": a.cfg.Nickname(), "group": a.cfg.Group(), "server": a.cfg.ServerURL(),
 		},
+		"needNickname":   a.needNickname,
 		"onboardingDone": a.cfg.OnboardingDone(),
 	}
 }

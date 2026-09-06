@@ -1,23 +1,27 @@
 package app
 
+// Eco решает, рисовать ли кадры трансляции. Внутри лекции они нужны всегда,
+// поэтому режим экономии включается либо руками, либо когда картинку всё равно
+// никто не видит: окно свёрнуто, открыта другая вкладка или диалог.
 type Eco struct {
-	enabled, sessionActive, userEntered, windowVisible, previewTab bool
-	overlay                                                        bool
-	lowPower                                                       bool
-	OnChange                                                       func(lowPower bool)
+	sessionActive, windowVisible, previewTab bool
+	overlay                                  bool
+	manual                                   bool
+	lowPower                                 bool
+	OnChange                                 func(lowPower bool)
 }
 
-func newEco() *Eco { return &Eco{enabled: true, windowVisible: true, previewTab: true, lowPower: true} }
+func newEco() *Eco { return &Eco{windowVisible: true, previewTab: true, lowPower: true} }
 
-func (e *Eco) SetEnabled(v bool) { e.enabled = v; e.recompute() }
 func (e *Eco) SetSessionActive(v bool) {
 	e.sessionActive = v
 	if !v {
-		e.userEntered = false
+		e.manual = false
 	}
 	e.recompute()
 }
-func (e *Eco) SetUserEntered(v bool)   { e.userEntered = v; e.recompute() }
+func (e *Eco) SetManual(v bool)        { e.manual = v; e.recompute() }
+func (e *Eco) Manual() bool            { return e.manual }
 func (e *Eco) SetWindowVisible(v bool) { e.windowVisible = v; e.recompute() }
 func (e *Eco) SetPreviewTab(v bool)    { e.previewTab = v; e.recompute() }
 func (e *Eco) SetOverlay(v bool)       { e.overlay = v; e.recompute() }
@@ -33,19 +37,14 @@ func (e *Eco) Reason() string {
 		return "Открыта другая вкладка"
 	case e.overlay:
 		return "Открыто диалоговое окно"
-	case !e.userEntered:
-		return "Эко-режим: кадры не рендерятся до входа в лекцию"
+	case e.manual:
+		return "Эко-режим включён вручную: кадры не рендерятся, звук и anti-AFK работают"
 	}
 	return ""
 }
 
 func (e *Eco) recompute() {
-	var low bool
-	if !e.enabled {
-		low = !e.windowVisible || !e.previewTab || e.overlay
-	} else {
-		low = !e.sessionActive || !e.windowVisible || !e.previewTab || e.overlay || !e.userEntered
-	}
+	low := !e.sessionActive || !e.windowVisible || !e.previewTab || e.overlay || e.manual
 	if low == e.lowPower {
 		return
 	}

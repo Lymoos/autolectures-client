@@ -20,7 +20,31 @@ type Mail struct {
 	User     string `json:"user"`
 	Password string `json:"password"`
 	Sender   string `json:"sender,omitempty"`
+	// "" — по порту, "ssl" — сразу TLS (993), "starttls" — открытое
+	// соединение с переходом на TLS (143). Почта МИРЭА живёт на STARTTLS.
+	Security string `json:"security,omitempty"`
 }
+
+const (
+	MailSSL      = "ssl"
+	MailStartTLS = "starttls"
+)
+
+// Mode возвращает способ шифрования: либо выбранный руками, либо угаданный по порту.
+func (m Mail) Mode() string {
+	switch strings.ToLower(strings.TrimSpace(m.Security)) {
+	case MailSSL:
+		return MailSSL
+	case MailStartTLS:
+		return MailStartTLS
+	}
+	if m.Port == 143 || m.Port == 1143 {
+		return MailStartTLS
+	}
+	return MailSSL
+}
+
+func (m Mail) AutoSecurity() bool { return strings.TrimSpace(m.Security) == "" }
 
 const DefaultSender = "mts-link.ru"
 
@@ -44,7 +68,6 @@ type Data struct {
 	MailMonitoring    bool              `json:"mail_monitoring"`
 	TransparentWindow *bool             `json:"transparent_window,omitempty"`
 	Volume            *int              `json:"volume,omitempty"`
-	BossKey           string            `json:"boss_key"`
 	OnboardingDone    bool              `json:"onboarding_done"`
 	Mail              Mail              `json:"mail"`
 	MailLastUID       uint32            `json:"mail_last_uid"`
@@ -106,7 +129,7 @@ func (c *Config) init() {
 }
 
 func (c *Config) load() {
-	c.d = Data{ServerURL: defaultServer, Mode: "guest", BossKey: "Ctrl+Shift+H", Mail: Mail{Host: "imap.mail.ru", Port: 993}}
+	c.d = Data{ServerURL: defaultServer, Mode: "guest", Mail: Mail{Host: "imap.mail.ru", Port: 993}}
 	raw, err := os.ReadFile(c.path)
 	if err != nil {
 		return
@@ -120,9 +143,6 @@ func (c *Config) load() {
 	}
 	if d.Mode == "" {
 		d.Mode = "guest"
-	}
-	if d.BossKey == "" {
-		d.BossKey = "Ctrl+Shift+H"
 	}
 	if d.Mail.Port == 0 {
 		d.Mail.Port = 993
@@ -292,9 +312,6 @@ func (c *Config) SetVolume(v int) {
 	}
 	c.set("volume", func(d *Data) { d.Volume = &v })
 }
-func (c *Config) BossKey() string     { var v string; c.read(func(d *Data) { v = d.BossKey }); return v }
-func (c *Config) SetBossKey(v string) { c.set("boss_key", func(d *Data) { d.BossKey = v }) }
-
 func (c *Config) flag(pick func(d *Data) *bool, def bool) bool {
 	v := def
 	c.read(func(d *Data) {
@@ -346,7 +363,6 @@ func (c *Config) Syncable() map[string]any {
 		"group":              c.Group(),
 		"mail_monitoring":    c.MailMonitoring(),
 		"volume":             c.Volume(),
-		"boss_key":           c.BossKey(),
 		"transparent_window": c.TransparentWindow(),
 	}
 }
@@ -366,8 +382,5 @@ func (c *Config) ApplySynced(s map[string]any) {
 	}
 	if v, ok := s["volume"].(float64); ok {
 		c.SetVolume(int(v))
-	}
-	if v, ok := s["boss_key"].(string); ok && v != "" {
-		c.SetBossKey(v)
 	}
 }

@@ -32,6 +32,52 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function show(el, v) { el.classList.toggle('hidden', !v); }
 
+  // Таймер лекции крутим на странице: событий состояния мало, а секунды должны
+  // идти ровно.
+  var timerBase = 0, timerAt = 0, timerOn = false;
+  function paintTimer() {
+    if (!timerOn) return;
+    $('pill-timer').textContent = fmtDur(timerBase + (Date.now() - timerAt) / 1000);
+  }
+  setInterval(paintTimer, 1000);
+
+  // Свой выпадающий список: системный <select> рисует Windows, и он выбивается
+  // из оформления. Значение живёт в data-value, наружу летит обычный change.
+  function selectValue(root, v) {
+    if (v === undefined) return root.dataset.value || '';
+    var opt = root.querySelector('.select-opt[data-value="' + v + '"]') || root.querySelector('.select-opt');
+    root.dataset.value = opt.dataset.value;
+    root.querySelector('.select-label').textContent = opt.textContent;
+    root.querySelectorAll('.select-opt').forEach(function (o) { o.classList.toggle('active', o === opt); });
+    return root.dataset.value;
+  }
+  function closeSelects(except) {
+    document.querySelectorAll('.select.open').forEach(function (r) {
+      if (r === except) return;
+      r.classList.remove('open');
+      r.querySelector('.select-list').classList.add('hidden');
+    });
+  }
+  function setupSelect(root) {
+    var list = root.querySelector('.select-list');
+    root.querySelector('.select-btn').onclick = function (e) {
+      e.stopPropagation();
+      var opening = !root.classList.contains('open');
+      closeSelects(root);
+      root.classList.toggle('open', opening);
+      list.classList.toggle('hidden', !opening);
+    };
+    root.querySelectorAll('.select-opt').forEach(function (o) {
+      o.onclick = function () {
+        selectValue(root, o.dataset.value);
+        closeSelects();
+        root.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+    });
+  }
+  document.querySelectorAll('.select').forEach(setupSelect);
+  document.addEventListener('mousedown', function (e) { if (!e.target.closest('.select')) closeSelects(); });
+
   var currentTab = 0;
   function showTab(i) {
     currentTab = i;
@@ -86,6 +132,7 @@
   $('url').addEventListener('change', function () { AL.call('setUrl', { url: this.value.trim() }); });
   $('btn-start').onclick = function () { AL.call(S.globalSession ? 'stop' : 'start', { url: $('url').value.trim() }); };
   $('btn-watch').onclick = function () { AL.call('watch'); };
+  $('btn-eco').onclick = function () { AL.call('eco', { on: !(S.eco && S.eco.manual) }); };
   $('mail-toggle').addEventListener('change', function () { AL.call('mailToggle', { on: this.checked }); });
   $('btn-telegram').onclick = function () { openDialog('telegram'); telegramFlow(); };
   $('btn-esco').onclick = function () { AL.call(S.esco && S.esco.loginActive ? 'escoEnd' : 'escoBegin'); };
@@ -93,11 +140,32 @@
   $('btn-account').onclick = function () { openDialog('account'); };
   $('btn-settings').onclick = function () { openDialog('settings'); fillSettings(); };
   $('btn-update').onclick = function () { AL.call('update'); };
+  $('btn-nick-save').onclick = saveNickname;
+  $('nick-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') saveNickname(); });
+
+  // Имя участника: форма входа на трансляцию не пускает без него.
+  var nickAsked = false;
+  function nickErr(t) { $('nick-err').textContent = t; show($('nick-err'), !!t); }
+  function askNickname() {
+    openDialog('nickname');
+    nickErr('');
+    $('nick-input').value = (S.settings || {}).nickname || '';
+    setTimeout(function () { $('nick-input').focus(); }, 50);
+  }
+  function saveNickname() {
+    var v = $('nick-input').value.trim();
+    if (v.length < 2) return nickErr('Впишите имя, под которым вас увидят на трансляции');
+    $('btn-nick-save').disabled = true;
+    AL.call('setNickname', { nickname: v })
+      .then(function () { closeDialog(); })
+      .catch(function (e) { nickErr(e.message); })
+      .finally(function () { $('btn-nick-save').disabled = false; });
+  }
 
   var dialog = null;
   function openDialog(name) {
     dialog = name;
-    ['account', 'settings', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
+    ['account', 'settings', 'nickname', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
     show($('overlay'), true);
     AL.call('overlay', { open: true });
   }
@@ -112,7 +180,7 @@
   document.querySelectorAll('[data-close]').forEach(function (b) { b.onclick = closeDialog; });
   $('overlay').addEventListener('mousedown', function (e) { if (e.target === this) closeDialog(); });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeDialog();
+    if (e.key === 'Escape') { closeSelects(); closeDialog(); }
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') AL.call('copyLog');
   });
 
@@ -172,7 +240,6 @@
   function fillSettings() {
     var s = S.settings || {};
     $('set-nick').value = s.nickname || ''; $('set-server').value = s.server || '';
-    $('set-boss').value = s.bossKey || '';
     show($('admin-box'), !!S.admin);
     adminErr('');
     armReset(false);
@@ -181,8 +248,8 @@
   function saveSettings() {
     if (!settingsLoaded) return;
     AL.call('saveSettings', {
-      nickname: $('set-nick').value.trim(), server: $('set-server').value.trim(),
-      bossKey: $('set-boss').value.trim() || 'Ctrl+Shift+H'
+      nickname: $('set-nick').value.trim(),
+      server: S.admin ? $('set-server').value.trim() : ''
     });
   }
 
@@ -190,7 +257,7 @@
   function loadMailForm() {
     var m = S.mail || {};
     $('mail-host').value = m.host || ''; $('mail-port').value = m.port || 993; $('mail-user').value = m.user || ''; $('mail-pass').value = '';
-    $('mail-sender').value = m.sender || '';
+    $('mail-sender').value = m.sender || ''; selectValue($('mail-sec'), m.security || '');
     show($('mail-msg'), false); show($('btn-mail-disconnect'), !!m.configured); $('btn-mail-connect').disabled = false;
     // почта подключена — остаётся только «Отключить»
     show($('btn-mail-connect'), !m.configured);
@@ -199,18 +266,25 @@
   ['mail-host', 'mail-port', 'mail-user', 'mail-pass', 'mail-sender'].forEach(function (id) {
     $(id).addEventListener('input', function () { show($('btn-mail-connect'), true); });
   });
+  $('mail-sec').addEventListener('change', function () { show($('btn-mail-connect'), true); });
+  // Порт и шифрование ходят парой: меняешь одно — подсказываем второе.
+  $('mail-sec').addEventListener('change', function () {
+    var port = +$('mail-port').value, v = selectValue(this);
+    if (v === 'starttls' && (port === 993 || !port)) $('mail-port').value = 143;
+    if (v === 'ssl' && port === 143) $('mail-port').value = 993;
+  });
   function mailMsg(text, ok) { $('mail-msg').textContent = text; $('mail-msg').style.color = ok ? 'var(--ok)' : (ok === null ? 'var(--muted)' : 'var(--danger)'); show($('mail-msg'), true); }
   $('mail-user').addEventListener('change', function () {
     if ($('mail-host').value.trim()) return;
     var d = (this.value.split('@')[1] || '').toLowerCase();
     var map = { 'mail.ru': 'imap.mail.ru', 'bk.ru': 'imap.mail.ru', 'inbox.ru': 'imap.mail.ru', 'list.ru': 'imap.mail.ru', 'gmail.com': 'imap.gmail.com', 'outlook.com': 'outlook.office365.com', 'hotmail.com': 'outlook.office365.com' };
-    if (map[d]) $('mail-host').value = map[d]; else if (d.indexOf('yandex') >= 0 || d === 'ya.ru') $('mail-host').value = 'imap.yandex.ru'; else if (/mirea\.ru$/.test(d)) $('mail-host').value = 'mail.mirea.ru';
+    if (map[d]) $('mail-host').value = map[d]; else if (d.indexOf('yandex') >= 0 || d === 'ya.ru') $('mail-host').value = 'imap.yandex.ru'; else if (/mirea\.ru$/.test(d)) { $('mail-host').value = 'imap.mirea.ru'; $('mail-port').value = 993; selectValue($('mail-sec'), ''); }
   });
   $('btn-mail-connect').onclick = function () {
     var s = {
       host: $('mail-host').value.trim(), port: +$('mail-port').value || 993,
       user: $('mail-user').value.trim(), password: $('mail-pass').value,
-      sender: $('mail-sender').value.trim()
+      sender: $('mail-sender').value.trim(), security: selectValue($('mail-sec'))
     };
     if (!s.host || !s.user || !s.password) return mailMsg('Заполните сервер, логин и пароль', false);
     $('btn-mail-connect').disabled = true; mailMsg('Подключение к ' + s.host + '…', null);
@@ -353,6 +427,7 @@
     function place() {
       var tip = $('ob-tip'), hole = $('ob-hole'), W = window.innerWidth, H = window.innerHeight;
       var target = s.target && $(s.target), r = target ? target.getBoundingClientRect() : null;
+      if (r && (r.width < 2 || r.height < 2)) r = null;   // элемент скрыт — подсвечивать нечего
       if (r) { hole.style.cssText = 'left:' + (r.left - 6) + 'px;top:' + (r.top - 6) + 'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px;'; hole.classList.remove('hidden'); }
       else hole.classList.add('hidden');
       var tw = 340, th = tip.offsetHeight || 150, x, y, m = 12;
@@ -380,14 +455,14 @@
       { target: 'url', title: 'Ссылка на трансляцию', text: 'Вставьте ссылку MTS-Link. Если оставить поле пустым, ссылки придут сами: из расписания, из письма или из Telegram.' },
       { target: 'auth-block', title: 'Авторизация', text: 'Telegram — команды и уведомления. МИРЭА — вход в ЕСКО, без него не пройдёт отметка по QR-коду. Почта — разбор приглашений MTS-Link.' },
       { target: 'btn-start', title: 'Старт сессии', text: 'Одна кнопка запускает всё: связь с сервером, планировщик по расписанию, мониторинг почты и вход на трансляцию.' },
-      { target: 'previewer', title: 'Live Previewer', text: 'Здесь идёт трансляция. В эко-режиме кадры не рисуются, пока вы не нажмёте «Смотреть» — звук, anti-AFK и сканер QR при этом работают.' },
+      { target: 'previewer', title: 'Live Previewer', text: 'Здесь идёт трансляция: картинка включается сразу, как клиент вошёл в лекцию. Кнопка «ЭКО» рядом с таймером выключает отрисовку кадров — звук, anti-AFK и сканер QR продолжают работать, а ноутбук не греется. Сама по себе картинка гаснет, когда окно свёрнуто или открыта другая вкладка.' },
       { tab: 1, target: 'sch-group', title: 'Группа', text: 'Впишите группу как в расписании МИРЭА, например ИВБО-21-23, и нажмите Enter.' },
       { tab: 1, target: 'sch-list', title: 'Список лекций', text: 'Здесь лекции из вашего расписания, справа у каждой — текущий статус.' },
       { tab: 1, target: 'stats', title: 'Статистика', text: 'Занятий на неделе, сколько посещено, сколько раз отметка засчитана и общее время внутри трансляций.' },
       { tab: 1, target: 'btn-refresh', title: 'Обновление расписания', text: 'Расписание перечитывается само, но кнопка перезагружает его сразу. Рядом видно, что получилось: сколько дистанционных занятий нашлось.' },
       { target: 'btn-telegram', title: 'Если ссылка не пришла', text: 'Занятие началось, а ссылки нет — клиент ждёт письмо 15 минут и потом сам пишет вам в Telegram с просьбой прислать ссылку. Ответьте боту ссылкой, и он подключится. Туда же приходят старт лекции, подтверждение присутствия и результат отметки.' },
       { target: 'btn-volume', title: 'Громкость', text: 'Регулятор громкости трансляции, как в системном микшере Windows.' },
-      { target: 'btn-settings', title: 'Параметры', text: 'Имя, под которым клиент входит на трансляцию, адрес сервера и Boss Key (' + ((S.settings || {}).bossKey || 'Ctrl+Shift+H') + ') — мгновенно спрятать и вернуть окно.' },
+      { target: 'btn-settings', title: 'Параметры', text: 'Имя, под которым клиент входит на трансляцию. Рядом с крестиком — кнопка «свернуть в трей»: окно исчезает, а клиент продолжает вести лекцию в фоне.' },
       { target: 'btn-account', title: 'Аккаунт', text: 'Войдите, чтобы настройки, ссылки и статусы синхронизировались между устройствами и работал Telegram, либо продолжайте как гость — тогда всё хранится только на этом ПК.' }
     ];
     show($('onboard'), true); AL.call('overlay', { open: true }); obStep(0);
@@ -438,7 +513,14 @@
     $('btn-start').firstElementChild.className = 'ico ' + (s.globalSession ? 'ico-stop' : 'ico-play');
     var ses = s.session;
     show($('lecture-line'), ses.active); $('lecture-line').textContent = '● В лекции: ' + ses.title;
-    show($('pill'), ses.active); $('pill-state').textContent = ses.state; $('pill-timer').textContent = fmtDur(ses.seconds);
+    show($('pill'), ses.active);
+    $('pill-state').textContent = ses.state;
+    timerOn = !!ses.active;
+    timerBase = ses.seconds || 0; timerAt = Date.now();
+    $('pill-timer').textContent = fmtDur(timerBase);
+    var people = ses.participants || 0;
+    show($('pill-people'), ses.active && people > 0);
+    $('pill-people').textContent = people + ' чел.';
     // Итог отметки по QR-коду: зелёный — засчитана, жёлтый — осечка.
     var at = s.attendance || {}, look = attendLook[at.status];
     if (look && ses.active) {
@@ -447,7 +529,9 @@
       $('pill-attend').title = at.text || look[0];
     }
     show($('pill-attend'), !!look && ses.active);
-    show($('pill-eco'), ses.active && s.eco.lowPower);
+    $('btn-eco').classList.toggle('on', !!s.eco.lowPower);
+    $('btn-eco').title = s.eco.lowPower ? (s.eco.reason || 'Кадры не рендерятся') + '. Нажмите, чтобы показать трансляцию'
+                                        : 'Эко-режим: не рисовать кадры, оставить звук, anti-AFK и сканер QR';
     // заглушку прячем, только когда сцена реально видна
     var ph = $('placeholder');
     if (s.stageShown) ph.classList.add('fade');
@@ -468,6 +552,10 @@
     $('acc-status').innerHTML = s.account.guest ? 'Гостевой режим. Войдите, чтобы синхронизировать настройки между устройствами и подключить Telegram.'
       : 'Вы вошли как <b>' + esc(s.account.login) + '</b>. Настройки, ссылки и статусы синхронизируются с сервером.';
     show($('acc-form'), s.account.guest); show($('btn-signout'), !s.account.guest);
+    // Имя для входа спрашиваем один раз на попытку: если окно закрыли крестиком,
+    // навязываться повторно не надо.
+    if (!s.needNickname) nickAsked = false;
+    else if (!nickAsked && !dialog) { nickAsked = true; askNickname(); }
     // онбординг при первом запуске
     if (!s.onboardingDone && !onboardingStarted) { onboardingStarted = true; setTimeout(startOnboarding, 600); }
     sendPreviewRect();

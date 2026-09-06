@@ -40,16 +40,47 @@
       return null;
     },
 
-    // Установка значения в контролируемый (React/Vue) input
+    // Установка значения в контролируемый (React/Vue/Angular) input.
+    // Одного события input мало: форма входа MTS-Link включает кнопку только
+    // после «человеческого» набора, поэтому шлём весь набор событий и снимаем
+    // фокус — иначе имя стоит, а «Присоединиться» остаётся серой.
     setInputValue: function (input, value) {
+      try { input.focus(); } catch (e) { /* игнорируем */ }
+      AL.key(input, 'keydown');
       try {
         var proto = Object.getPrototypeOf(input);
         var desc = Object.getOwnPropertyDescriptor(proto, 'value')
                 || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
         if (desc && desc.set) desc.set.call(input, value); else input.value = value;
       } catch (e) { input.value = value; }
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      try {
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value, inputType: 'insertText' }));
+      } catch (e) {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      AL.key(input, 'keyup');
       input.dispatchEvent(new Event('change', { bubbles: true }));
+      try { input.blur(); } catch (e) { /* игнорируем */ }
+      input.dispatchEvent(new Event('blur', { bubbles: true }));
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    },
+
+    key: function (el, type, name) {
+      var init = { bubbles: true, cancelable: true, key: name || 'a', code: name === 'Enter' ? 'Enter' : 'KeyA',
+                   keyCode: name === 'Enter' ? 13 : 65, which: name === 'Enter' ? 13 : 65 };
+      try { el.dispatchEvent(new KeyboardEvent(type, init)); } catch (e) { /* игнорируем */ }
+    },
+
+    // Формы, где кнопка так и не включилась, обычно отправляются по Enter.
+    pressEnter: function (el) {
+      try { el.focus(); } catch (e) { /* игнорируем */ }
+      AL.key(el, 'keydown', 'Enter');
+      AL.key(el, 'keypress', 'Enter');
+      AL.key(el, 'keyup', 'Enter');
+      var form = el.form || (el.closest && el.closest('form'));
+      if (form && typeof form.requestSubmit === 'function') {
+        try { form.requestSubmit(); } catch (e) { /* игнорируем */ }
+      }
     },
 
     // Обход открытых shadow-root: части интерфейса живут в веб-компонентах.

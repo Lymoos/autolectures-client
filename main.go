@@ -47,7 +47,7 @@ func main() {
 		}
 	}
 
-	order := []string{"bridge.js", "jsQR.js", "qrscan.js", "antiafk.js", "autojoin.js", "volume.js", "mediadiag.js"}
+	order := []string{"bridge.js", "jsQR.js", "qrscan.js", "antiafk.js", "autojoin.js", "popups.js", "participants.js", "volume.js", "mediadiag.js"}
 	var scripts []string
 	for _, name := range order {
 		scripts = append(scripts, read(scriptsFS, "scripts/"+name))
