@@ -1,9 +1,11 @@
 package update
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -99,6 +101,55 @@ func (u *Updater) get(url string, accept string) ([]byte, error) {
 
 func (u *Updater) Check() { u.checkReleases() }
 
+func (u *Updater) progress(p int) {
+	if u.OnProgress != nil {
+		u.OnProgress(p)
+	}
+}
+
+// Качаем потоком, чтобы окно обновления показывало реальный процент, а не три
+// заранее заданных отметки.
+func (u *Updater) download(url string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Autolectures/"+u.version)
+	resp, err := u.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var out bytes.Buffer
+	buf := make([]byte, 128<<10)
+	total, done, last := resp.ContentLength, int64(0), -1
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			out.Write(buf[:n])
+			done += int64(n)
+			if total > 0 {
+				if p := int(done * 90 / total); p != last {
+					last = p
+					u.progress(p)
+				}
+			}
+		}
+		if rerr == io.EOF {
+			return out.Bytes(), nil
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+		if out.Len() > 200<<20 {
+			return nil, errors.New("файл обновления слишком большой")
+		}
+	}
+}
+
 func (u *Updater) checkReleases() {
 	raw, err := u.get(releasesURL, "application/vnd.github+json")
 	if err != nil {
@@ -159,10 +210,8 @@ func (u *Updater) DownloadAndInstall() {
 		}
 	}
 	logger.Infof(src, "Скачиваю %s", url)
-	if u.OnProgress != nil {
-		u.OnProgress(10)
-	}
-	data, err := u.get(url, "")
+	u.progress(1)
+	data, err := u.download(url)
 	if err != nil {
 		fail("Ошибка загрузки: " + err.Error())
 		return
@@ -174,9 +223,7 @@ func (u *Updater) DownloadAndInstall() {
 			return
 		}
 	}
-	if u.OnProgress != nil {
-		u.OnProgress(70)
-	}
+	u.progress(92)
 	if len(data) < 2 || data[0] != 'M' || data[1] != 'Z' {
 		fail("Файл обновления повреждён")
 		return
@@ -193,9 +240,7 @@ func (u *Updater) DownloadAndInstall() {
 		fail("Не удалось сохранить обновление: " + err.Error())
 		return
 	}
-	if u.OnProgress != nil {
-		u.OnProgress(95)
-	}
+	u.progress(96)
 	helper := filepath.Join(staging, "apply-"+latest+".exe")
 	if err := copyFile(self, helper); err != nil {
 		fail("Не удалось подготовить модуль обновления: " + err.Error())
@@ -207,9 +252,7 @@ func (u *Updater) DownloadAndInstall() {
 		return
 	}
 	logger.Infof(src, "Обновление подготовлено, перезапуск приложения")
-	if u.OnProgress != nil {
-		u.OnProgress(100)
-	}
+	u.progress(100)
 	if u.OnRestart != nil {
 		u.OnRestart()
 	}
@@ -238,8 +281,8 @@ func Apply(args []string) int {
 		}
 	}
 	log(fmt.Sprintf("ожидание завершения процесса %d", pid))
-	for i := 0; i < 120 && processAlive(pid); i++ {
-		time.Sleep(500 * time.Millisecond)
+	for i := 0; i < 240 && processAlive(pid); i++ {
+		time.Sleep(100 * time.Millisecond)
 	}
 	var lastErr error
 	for i := 0; i < 30; i++ {
@@ -259,13 +302,4 @@ func Apply(args []string) int {
 	cmd.Dir = filepath.Dir(target)
 	_ = cmd.Start()
 	return 0
-}
-
-func processAlive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	_ = p.Release()
-	return true
 }

@@ -5,6 +5,13 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 New-Item -ItemType Directory -Force dist | Out-Null
 
+# Без явной версии берём последний тег: иначе локальная сборка считает себя
+# старее релиза и тут же обновляет сама себя до него.
+if (-not $Version) {
+    $tag = (git tag --list "v*" --sort=-v:refname 2>$null | Select-Object -First 1)
+    if ($tag) { $Version = $tag.TrimStart("v") }
+}
+
 $env:CGO_ENABLED = "0"
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
