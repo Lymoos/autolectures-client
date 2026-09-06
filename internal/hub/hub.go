@@ -89,8 +89,14 @@ func (h *Hub) run(ctx context.Context) {
 			return
 		}
 		logger.Infof(src, "Подключение к %s", url)
-		if h.session(ctx, url) {
+		ok, fatal := h.session(ctx, url)
+		if ok {
 			attempt = 0
+		}
+		// Сервер отклонил токен: без нового входа переподключаться бессмысленно.
+		if fatal {
+			h.Stop()
+			return
 		}
 		if ctx.Err() != nil {
 			return
@@ -108,13 +114,13 @@ func (h *Hub) run(ctx context.Context) {
 	}
 }
 
-func (h *Hub) session(ctx context.Context, url string) bool {
+func (h *Hub) session(ctx context.Context, url string) (authed, fatal bool) {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	conn, _, err := websocket.Dial(dialCtx, url, nil)
 	cancel()
 	if err != nil {
 		logger.Warnf(src, "Ошибка соединения: %v", err)
-		return false
+		return false, false
 	}
 	conn.SetReadLimit(2 * 1024 * 1024)
 	defer conn.Close(websocket.StatusNormalClosure, "")
@@ -124,10 +130,9 @@ func (h *Hub) session(ctx context.Context, url string) bool {
 		"protocol_version": proto.ProtocolVersion, "client_version": h.version,
 	}
 	if err := writeJSON(ctx, conn, auth); err != nil {
-		return false
+		return false, false
 	}
 
-	authed := false
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -142,7 +147,7 @@ func (h *Hub) session(ctx context.Context, url string) bool {
 					h.OnConnection(false)
 				}
 			}
-			return authed
+			return authed, false
 		}
 		var msg map[string]any
 		if json.Unmarshal(data, &msg) != nil {
@@ -162,13 +167,10 @@ func (h *Hub) session(ctx context.Context, url string) bool {
 		case proto.S2CAuthError:
 			reason, _ := msg["reason"].(string)
 			logger.Errorf(src, "Сервер отклонил авторизацию: %s", reason)
-			h.mu.Lock()
-			h.running = false
-			h.mu.Unlock()
 			if h.OnAuthFailed != nil {
 				h.OnAuthFailed(reason)
 			}
-			return false
+			return false, true
 		case proto.S2CSettingsUpdated:
 			if s, ok := msg["settings"].(map[string]any); ok && h.OnSettings != nil {
 				h.OnSettings(s)

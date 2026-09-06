@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ const (
 	horizonDays  = 14
 	matchTolMin  = 25
 	lessonLength = 90 * time.Minute
-	linkWait = 15 * time.Minute
+	linkWait     = 15 * time.Minute
 )
 
 type Entry struct {
@@ -42,9 +43,9 @@ type Entry struct {
 	Status        string    `json:"status"`
 	SecondsInside int64     `json:"seconds_inside"`
 	MarkedAt      string    `json:"marked_at"`
-	LinkAsked   bool `json:"link_asked,omitempty"`
-	autoStarted bool
-	linkWaiting bool
+	LinkAsked     bool      `json:"link_asked,omitempty"`
+	autoStarted   bool
+	linkWaiting   bool
 }
 
 func (e *Entry) sync() {
@@ -94,13 +95,14 @@ type Scheduler struct {
 	sessionActive bool
 	refreshing    bool
 	lastRefresh   time.Time
+	lastGroup     string
 
-	OnChanged   func()
-	OnStatus    func(text string)
-	OnLinks     func([]json.RawMessage)
-	OnAutoStart func(url, title string)
-	OnAutoStop  func()
-	OnLinkWait func(title string)
+	OnChanged     func()
+	OnStatus      func(text string)
+	OnLinks       func([]json.RawMessage)
+	OnAutoStart   func(url, title string)
+	OnAutoStop    func()
+	OnLinkWait    func(title string)
 	OnLinkMissing func(title string, start time.Time)
 }
 
@@ -210,15 +212,20 @@ func (s *Scheduler) RefreshNow() { s.refresh(true) }
 func (s *Scheduler) refresh(force bool) {
 	group := config.Get().Group()
 	if group == "" {
-		s.setStatus("Группа не указана")
+		s.setStatus("Группа не указана: расписание МИРЭА не обновляется")
 		return
 	}
 	s.mu.Lock()
+	// Сменили группу — перечитываем сразу, минутная пауза тут только мешает.
+	if group != s.lastGroup {
+		force = true
+	}
 	if s.refreshing || (!force && time.Since(s.lastRefresh) < time.Minute) {
 		s.mu.Unlock()
 		return
 	}
 	s.refreshing = true
+	s.lastGroup = group
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -249,27 +256,32 @@ func (s *Scheduler) refresh(force bool) {
 		} `json:"data"`
 	}
 	_ = json.Unmarshal(raw, &root)
+	// Поиск отдаёт всё, что похоже на запрос, поэтому берём точное совпадение;
+	// единственный найденный вариант считаем тем самым, а из нескольких
+	// неточных выбирать за пользователя нельзя.
 	icalURL := ""
-	for i, d := range root.Data {
+	var titles []string
+	for _, d := range root.Data {
 		title := d.TargetTitle
 		if title == "" {
 			title = d.FullTitle
 		}
-		if i > 0 && title != group {
+		titles = append(titles, title)
+		if !strings.EqualFold(strings.TrimSpace(title), group) {
 			continue
 		}
-		icalURL = d.ICalLink
-		if icalURL == "" {
-			target := d.ScheduleTarget
-			if target == 0 {
-				target = 1
-			}
-			icalURL = fmt.Sprintf("https://schedule-of.mirea.ru/schedule/api/ical/%d/%d", target, d.ID)
-		}
+		icalURL = icalLink(d.ICalLink, d.ScheduleTarget, d.ID)
 		break
 	}
+	if icalURL == "" && len(root.Data) == 1 {
+		icalURL = icalLink(root.Data[0].ICalLink, root.Data[0].ScheduleTarget, root.Data[0].ID)
+	}
 	if icalURL == "" {
-		s.setStatus("Группа " + group + " не найдена в расписании")
+		if len(titles) > 0 {
+			s.setStatus("Уточните группу: подходит " + strings.Join(titles[:min(len(titles), 4)], ", "))
+		} else {
+			s.setStatus("Группа " + group + " не найдена в расписании МИРЭА")
+		}
 		logger.Warnf(src, "%s", s.Status())
 		return
 	}
@@ -292,9 +304,24 @@ func (s *Scheduler) refresh(force bool) {
 			online++
 		}
 	}
-	s.merge(lessons)
-	s.setStatus(fmt.Sprintf("Расписание обновлено: %d дистанционных из %d занятий на %d дн.", online, len(lessons), horizonDays))
-	logger.Infof(src, "%s", s.Status())
+	stale := s.merge(lessons)
+	status := fmt.Sprintf("Обновлено в %s: %d дистанционных из %d занятий на %d дн.",
+		time.Now().Format("15:04:05"), online, len(lessons), horizonDays)
+	if stale > 0 {
+		status += fmt.Sprintf(", убрано устаревших: %d", stale)
+	}
+	s.setStatus(status)
+	logger.Infof(src, "%s", status)
+}
+
+func icalLink(link string, target, id int) string {
+	if link != "" {
+		return link
+	}
+	if target == 0 {
+		target = 1
+	}
+	return fmt.Sprintf("https://schedule-of.mirea.ru/schedule/api/ical/%d/%d", target, id)
 }
 
 func firstLine(s string) string {
@@ -334,7 +361,11 @@ func keepEntry(e Entry) bool {
 	return distantRe.MatchString(e.Location) || distantRe.MatchString(e.Teacher) || distantRe.MatchString(e.Title)
 }
 
-func (s *Scheduler) merge(lessons []ical.Lesson) {
+func lessonID(l ical.Lesson) string {
+	return "sch:" + shortHash(l.Start.Format(time.RFC3339)+"|"+l.Title)
+}
+
+func (s *Scheduler) merge(lessons []ical.Lesson) int {
 	s.mu.Lock()
 	skipped := 0
 	kept := s.entries[:0]
@@ -346,12 +377,38 @@ func (s *Scheduler) merge(lessons []ical.Lesson) {
 		}
 	}
 	s.entries = kept
+
+	// Занятия, которых больше нет в выгрузке (сменилась группа, пару перенесли
+	// или отменили), должны уходить из списка. То, где уже накопилась история,
+	// оставляем — иначе поедет статистика.
+	fresh := make(map[string]bool, len(lessons))
+	for _, l := range lessons {
+		if keepLesson(l) {
+			fresh[lessonID(l)] = true
+		}
+	}
+	now := time.Now()
+	from, to := now.AddDate(0, 0, -1), now.AddDate(0, 0, horizonDays)
+	stale := 0
+	alive := s.entries[:0]
+	for _, e := range s.entries {
+		outdated := e.Source == "schedule" && !fresh[e.ID] &&
+			!e.Start.Before(from) && !e.Start.After(to) &&
+			e.ID != s.activeID && e.SecondsInside == 0 && e.Status != proto.LinkMarked
+		if outdated {
+			stale++
+			continue
+		}
+		alive = append(alive, e)
+	}
+	s.entries = alive
+
 	for _, l := range lessons {
 		if !keepLesson(l) {
 			skipped++
 			continue
 		}
-		id := "sch:" + shortHash(l.Start.Format(time.RFC3339)+"|"+l.Title)
+		id := lessonID(l)
 		found := false
 		for i := range s.entries {
 			if s.entries[i].ID == id {
@@ -384,7 +441,11 @@ func (s *Scheduler) merge(lessons []ical.Lesson) {
 	if skipped > 0 {
 		logger.Infof(src, "Отброшено записей: %d (очные пары и пометки недель) — в списке только дистанционные занятия", skipped)
 	}
+	if stale > 0 {
+		logger.Infof(src, "Убрано занятий, которых больше нет в расписании: %d", stale)
+	}
 	s.persist()
+	return stale
 }
 
 func (s *Scheduler) findByURLLocked(u string) *Entry {
@@ -529,6 +590,31 @@ func (s *Scheduler) ApplyRemote(links []json.RawMessage) {
 		return
 	}
 	s.mu.Unlock()
+}
+
+// Remove убирает одно занятие из списка; занятия из официального расписания
+// вернутся при следующем обновлении, добавленные вручную — нет.
+func (s *Scheduler) Remove(id string) int {
+	if id == "" {
+		return 0
+	}
+	s.mu.Lock()
+	kept := s.entries[:0]
+	removed := 0
+	for _, e := range s.entries {
+		if e.ID == id && e.ID != s.activeID {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	s.entries = kept
+	s.mu.Unlock()
+	if removed == 0 {
+		return 0
+	}
+	s.persist()
+	return removed
 }
 
 func (s *Scheduler) SetArmed(v bool) { s.mu.Lock(); s.armed = v; s.mu.Unlock() }

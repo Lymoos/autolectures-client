@@ -43,10 +43,11 @@
         </div>
         <button class="icon-btn" id="btn-volume" title="Громкость трансляции"><span class="ico ico-volume"></span></button>
       </div>
-      <button class="btn ghost sm" id="btn-account" title="Аккаунт и параметры"><span class="ico ico-user"></span><span id="account-label">Гость</span><span class="dot" id="account-dot"></span></button>
+      <button class="btn ghost sm" id="btn-account" title="Аккаунт: вход, регистрация, выход"><span class="ico ico-user"></span><span id="account-label">Гость</span><span class="dot" id="account-dot"></span></button>
+      <button class="icon-btn" id="btn-settings" title="Параметры: имя на трансляции, сервер, Boss Key"><span class="ico ico-settings"></span></button>
       <button class="icon-btn" id="btn-min" title="Свернуть"><span class="ico ico-minimize"></span></button>
-      <button class="icon-btn" id="btn-tray" title="Скрыть в трей (Boss Key)"><span class="ico ico-tray"></span></button>
-      <button class="icon-btn danger" id="btn-close" title="Закрыть"><span class="ico ico-close"></span></button>
+      <button class="icon-btn" id="btn-tray" title="Свернуть в трей: клиент продолжит работать в фоне (Boss Key)"><span class="ico ico-tray"></span></button>
+      <button class="icon-btn danger" id="btn-close" title="Выйти из Автолекций"><span class="ico ico-close"></span></button>
     </div>
   </header>
 
@@ -95,7 +96,7 @@
 
     <!-- ===== Расписание ===== -->
     <section class="page hidden" id="page-1">
-      <div class="stats">
+      <div class="stats" id="stats">
         <div class="glass stat" title="Занятия по официальному расписанию группы на текущей неделе"><div class="caption">Занятий на неделе</div><div class="stat-val" id="st-week">0</div></div>
         <div class="glass stat" title="Лекции, в которые клиент входил"><div class="caption">Посещено</div><div class="stat-val" id="st-attended">0</div></div>
         <div class="glass stat" title="Успешные отметки присутствия по QR-коду"><div class="caption">Отмечено</div><div class="stat-val" id="st-marked">0</div></div>
@@ -103,10 +104,12 @@
       </div>
       <div class="list-head">
         <span class="h2">Ближайшие лекции</span>
-        <span class="muted" id="sch-group"></span>
+        <label class="group-field" title="Учебная группа: по ней расписание тянется с schedule-of.mirea.ru">
+          <span class="caption">Группа</span>
+          <input type="text" id="sch-group" placeholder="ИВБО-21-23" spellcheck="false">
+        </label>
         <span class="spacer"></span>
         <span class="dim" id="sch-status"></span>
-        <button class="btn subtle sm" id="btn-group" title="Указать учебную группу для загрузки расписания">Группа</button>
         <button class="btn ghost sm" id="btn-refresh" title="Перезагрузить расписание с schedule-of.mirea.ru"><span class="ico ico-update"></span><span>Обновить</span></button>
       </div>
       <div class="list" id="sch-list"></div>
@@ -136,10 +139,7 @@
     <div class="glass card" id="card">
       <!-- Аккаунт -->
       <div class="dlg hidden" id="dlg-account">
-        <div class="dlg-head">
-          <div class="seg"><button class="tab active" data-page="acc" title="Вход и регистрация">Аккаунт</button><button class="tab" data-page="set" title="Имя, группа, сервер, эко-режим">Параметры</button></div>
-          <span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button>
-        </div>
+        <div class="dlg-head"><span class="title">Аккаунт</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
         <div id="acc-page">
           <div class="muted" id="acc-status"></div>
           <div id="acc-form">
@@ -155,16 +155,25 @@
           </div>
           <button class="btn danger hidden" id="btn-signout">Выйти из аккаунта</button>
         </div>
-        <div id="set-page" class="hidden">
-          <div class="form">
-            <label>Имя на трансляции<input type="text" id="set-nick" placeholder="Иван Иванов" title="Имя, которое вводится при гостевом входе на трансляцию MTS-Link"></label>
-            <label>Группа<input type="text" id="set-group" placeholder="ИКБО-01-23" title="Учебная группа для загрузки официального расписания МИРЭА"></label>
-            <label>Сервер<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера синхронизации (REST + WebSocket)"></label>
-            <label>Boss Key<input type="text" id="set-boss" placeholder="Ctrl+Shift+H" title="Глобальная комбинация для мгновенного скрытия/показа окна"></label>
-            <label class="toggle-line" title="Ограничивать частоту кадров трансляции до входа в лекцию и при сворачивании"><span class="switch"><input type="checkbox" id="set-eco"><span class="knob"></span></span><span>Эко-режим (лимит FPS)</span></label>
-            <label class="toggle-line" title="При закрытии окна продолжать работу в фоне"><span class="switch"><input type="checkbox" id="set-tray"><span class="knob"></span></span><span>Сворачивать в трей</span></label>
-            <div class="dim">Параметры сохраняются при закрытии окна. Пароль почты и токены не синхронизируются.</div>
-          </div>
+      </div>
+
+      <!-- Параметры -->
+      <div class="dlg hidden" id="dlg-settings">
+        <div class="dlg-head"><span class="title">Параметры</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
+        <div class="form">
+          <label>Имя на трансляции<input type="text" id="set-nick" placeholder="Иван Иванов" title="Имя, которое вводится при гостевом входе на трансляцию MTS-Link"></label>
+          <label>Сервер<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера синхронизации (REST + WebSocket)"></label>
+          <label>Boss Key<input type="text" id="set-boss" placeholder="Ctrl+Shift+H" title="Глобальная комбинация для мгновенного скрытия/показа окна"></label>
+          <div class="dim">Учебная группа задаётся на вкладке «Расписание» — там же видно, что подтянулось с сервера МИРЭА.</div>
+          <div class="dim">Параметры сохраняются при закрытии окна. Пароль почты и токены не синхронизируются и хранятся в зашифрованном виде только на этом ПК.</div>
+          <div class="dim">Эко-режим включён всегда — он бережёт заряд и процессор.</div>
+        </div>
+        <div class="admin hidden" id="admin-box">
+          <div class="caption">Администратор</div>
+          <div class="dim">Служебные действия для проверки клиента «с нуля».</div>
+          <button class="btn ghost" id="btn-onboard">Пройти обучение заново</button>
+          <button class="btn danger" id="btn-reset" title="Удалить конфиг, вход, почту, расписание и профиль браузера, затем перезапустить клиент">Снести все данные и перезапустить</button>
+          <div class="err hidden" id="admin-err"></div>
         </div>
       </div>
 

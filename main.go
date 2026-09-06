@@ -4,13 +4,16 @@ import (
 	"embed"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Lymoos/autolectures/client/internal/app"
+	"github.com/Lymoos/autolectures/client/internal/config"
 	"github.com/Lymoos/autolectures/client/internal/update"
 )
 
-var Version = "1.0.2"
+var Version = "1.0.3"
 
 //go:embed web/index.html web/app.css web/app.js
 var webFS embed.FS
@@ -32,9 +35,15 @@ func main() {
 		os.Exit(update.Apply(args[1:]))
 	}
 	smoke := false
-	for _, a := range args {
+	for i, a := range args {
 		if a == "--smoke" {
 			smoke = true
+		}
+		// Сброс данных запускает сам клиент: дожидаемся выхода прежнего процесса,
+		// иначе профиль браузера ещё занят.
+		if a == "--reset" && i+1 < len(args) {
+			waitForExit(args[i+1])
+			_ = config.WipeStorage()
 		}
 	}
 
@@ -65,6 +74,21 @@ func main() {
 		Scripts:   scripts,
 	}, app.Options{Version: Version, Smoke: smoke})
 	os.Exit(code)
+}
+
+func waitForExit(pidStr string) {
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil || pid <= 0 {
+		return
+	}
+	for i := 0; i < 80; i++ {
+		if p, err := os.FindProcess(pid); err != nil || p == nil {
+			return
+		} else {
+			_ = p.Release()
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func contains(list []string, v string) bool {

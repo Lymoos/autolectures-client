@@ -1,0 +1,89 @@
+name: release on merge
+
+# Влитый в main пулл-реквест сам поднимает версию, собирает exe и публикует
+# релиз. Описание пулл-реквеста становится описанием релиза — его же клиент
+# показывает в уведомлении об обновлении.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'no-release')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: version
+        id: ver
+        shell: pwsh
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          $tag = git tag --list "v*" --sort=-v:refname | Select-Object -First 1
+          if (-not $tag) { $tag = "v0.0.0" }
+          $p = $tag.TrimStart("v").Split(".")
+          $major = [int]$p[0]; $minor = [int]$p[1]; $patch = [int]$p[2]
+          $bump = "patch"
+          if ($env:LABELS -split "," -contains "release:minor" -or $env:PR_TITLE -match "^feat(\(|!|:)") { $bump = "minor" }
+          if ($env:LABELS -split "," -contains "release:major" -or $env:PR_TITLE -match "!:") { $bump = "major" }
+          if ($env:LABELS -split "," -contains "release:patch") { $bump = "patch" }
+          switch ($bump) {
+            "major" { $major++; $minor = 0; $patch = 0 }
+            "minor" { $minor++; $patch = 0 }
+            default { $patch++ }
+          }
+          $v = "$major.$minor.$patch"
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=v$v"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "$tag -> v$v ($bump)"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: build
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "0"
+          go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=${{ steps.ver.outputs.version }}" -o autolectures-windows-x64.exe .
+          (Get-FileHash autolectures-windows-x64.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline autolectures-windows-x64.exe.sha256
+
+      - name: notes
+        id: notes
+        shell: pwsh
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          $body = $env:PR_BODY
+          if ([string]::IsNullOrWhiteSpace($body)) { $body = "Описание не заполнено." }
+          $text = "$env:PR_TITLE`n`n$body`n`nПулл-реквест: $env:PR_URL (#$env:PR_NUM)"
+          Set-Content -Path notes.md -Value $text -Encoding utf8
+
+      - name: tag
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.tag }}" -m "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          body_path: notes.md
+          files: |
+            autolectures-windows-x64.exe
+            autolectures-windows-x64.exe.sha256
