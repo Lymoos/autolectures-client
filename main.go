@@ -13,7 +13,7 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/update"
 )
 
-var Version = "1.1.1"
+var Version = "1.2.0"
 
 //go:embed web/index.html web/app.css web/app.js
 var webFS embed.FS
