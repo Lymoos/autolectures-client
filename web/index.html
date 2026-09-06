@@ -30,7 +30,8 @@
       <!-- Итог отметки по QR: зелёный — отметились, жёлтый — осечка,
            красный — не авторизованы в ЕСКО. -->
       <span class="attend hidden" id="pill-attend" title="Результат последней попытки отметки по QR-коду"></span>
-      <span class="eco hidden" id="pill-eco" title="Эко-режим: рендеринг кадров приостановлен">ЭКО</span>
+      <span class="people hidden" id="pill-people" title="Участников на трансляции"></span>
+      <button class="eco-btn" id="btn-eco" title="Эко-режим: не рисовать кадры, оставить звук, anti-AFK и сканер QR">ЭКО</button>
     </div>
     <div class="tb-spacer" id="drag-zone2"></div>
     <div class="tb-right">
@@ -46,7 +47,7 @@
       <button class="btn ghost sm" id="btn-account" title="Аккаунт: вход, регистрация, выход"><span class="ico ico-user"></span><span id="account-label">Гость</span><span class="dot" id="account-dot"></span></button>
       <button class="icon-btn" id="btn-settings" title="Параметры: имя на трансляции, сервер, Boss Key"><span class="ico ico-settings"></span></button>
       <button class="icon-btn" id="btn-min" title="Свернуть"><span class="ico ico-minimize"></span></button>
-      <button class="icon-btn" id="btn-tray" title="Свернуть в трей: клиент продолжит работать в фоне (Boss Key)"><span class="ico ico-tray"></span></button>
+      <button class="icon-btn" id="btn-tray" title="Свернуть в трей: клиент продолжит работать в фоне"><span class="ico ico-tray"></span></button>
       <button class="icon-btn danger" id="btn-close" title="Выйти из Автолекций"><span class="ico ico-close"></span></button>
     </div>
   </header>
@@ -162,18 +163,31 @@
         <div class="dlg-head"><span class="title">Параметры</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
         <div class="form">
           <label>Имя на трансляции<input type="text" id="set-nick" placeholder="Иван Иванов" title="Имя, которое вводится при гостевом входе на трансляцию MTS-Link"></label>
-          <label>Сервер<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера синхронизации (REST + WebSocket)"></label>
-          <label>Boss Key<input type="text" id="set-boss" placeholder="Ctrl+Shift+H" title="Глобальная комбинация для мгновенного скрытия/показа окна"></label>
           <div class="dim">Учебная группа задаётся на вкладке «Расписание» — там же видно, что подтянулось с сервера МИРЭА.</div>
           <div class="dim">Параметры сохраняются при закрытии окна. Пароль почты и токены не синхронизируются и хранятся в зашифрованном виде только на этом ПК.</div>
           <div class="dim">Эко-режим включён всегда — он бережёт заряд и процессор.</div>
         </div>
         <div class="admin hidden" id="admin-box">
           <div class="caption">Администратор</div>
+          <label class="admin-field">Сервер синхронизации<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера аккаунтов, синхронизации и Telegram-бота"></label>
           <div class="dim">Служебные действия для проверки клиента «с нуля».</div>
           <button class="btn ghost" id="btn-onboard">Пройти обучение заново</button>
           <button class="btn danger" id="btn-reset" title="Удалить конфиг, вход, почту, расписание и профиль браузера, затем перезапустить клиент">Снести все данные и перезапустить</button>
           <div class="err hidden" id="admin-err"></div>
+        </div>
+      </div>
+
+      <!-- Имя для входа на трансляцию -->
+      <div class="dlg hidden" id="dlg-nickname">
+        <div class="dlg-head"><span class="title">Имя для входа</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
+        <div class="muted">Трансляция просит имя участника, а в параметрах оно не заполнено. Впишите его — клиент подставит имя в форму входа и нажмёт «Присоединиться» сам. В следующий раз спрашивать не будет.</div>
+        <div class="form">
+          <label>Имя на трансляции<input type="text" id="nick-input" placeholder="Иван Иванов"></label>
+        </div>
+        <div class="err hidden" id="nick-err"></div>
+        <div class="dlg-actions">
+          <span class="spacer"></span>
+          <button class="btn primary" id="btn-nick-save">Войти на трансляцию</button>
         </div>
       </div>
 
@@ -183,7 +197,18 @@
         <div class="muted">Клиент читает письма по IMAP и добавляет ссылки на лекции в расписание. По умолчанию разбираются письма со всего домена <b>mts-link.ru</b> — приглашения и напоминания; для проверки можно указать любой другой адрес. Для Mail.ru, Яндекса и Gmail нужен <b>пароль приложения</b>, а не основной пароль.</div>
         <div class="form">
           <label>Сервер IMAP<input type="text" id="mail-host" placeholder="imap.mail.ru / imap.yandex.ru / imap.gmail.com"></label>
-          <label>Порт (SSL)<input type="number" id="mail-port" value="993" min="1" max="65535"></label>
+          <label>Порт<input type="number" id="mail-port" value="993" min="1" max="65535"></label>
+          <div class="field-col" title="993 — соединение сразу зашифровано. 143 — открытое соединение с переходом на TLS командой STARTTLS: так работает почта МИРЭА.">
+            <span>Шифрование</span>
+            <div class="select" id="mail-sec" data-value="">
+              <button type="button" class="select-btn"><span class="select-label">Автоматически — по порту</span><span class="ico ico-chevron"></span></button>
+              <div class="select-list hidden">
+                <button type="button" class="select-opt active" data-value="">Автоматически — по порту</button>
+                <button type="button" class="select-opt" data-value="ssl">SSL/TLS — обычно порт 993</button>
+                <button type="button" class="select-opt" data-value="starttls">STARTTLS — обычно порт 143</button>
+              </div>
+            </div>
+          </div>
           <label>Логин<input type="text" id="mail-user" placeholder="student@mail.ru"></label>
           <label>Пароль<input type="password" id="mail-pass" placeholder="Пароль приложения"></label>
           <label title="Чьи письма разбирать: домен целиком или конкретный адрес. Для проверки можно указать свою почту и отправить письмо самому себе.">Разбирать письма от<input type="text" id="mail-sender" placeholder="mts-link.ru"></label>

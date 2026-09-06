@@ -45,6 +45,9 @@
   AL.onReady(function (bridge) {
     var joined = false;
     var nameFilled = false;
+    var askedName = false;
+    var filledAt = 0;
+    var enterTried = false;
     var clicks = 0;
     var settled = 0;
     var startedAt = Date.now();
@@ -88,21 +91,28 @@
 
       // 2. имя участника
       var input = findNameInput(join !== null);
-      // имя уже подставлено виджетом — не трогаем
-      if (input && input.value && input.value.trim().length > 1) {
-        nameFilled = true;
-      } else if (input && !nameFilled) {
-        var nick = bridge.nickname;
+      var typed = input ? (input.value || '').trim() : '';
+      if (typed.length > 1) {
+        // имя уже стоит — виджет подставил сам или это наш ввод
+        if (!nameFilled) { nameFilled = true; filledAt = now; }
+      } else if (input) {
+        var nick = (bridge.nickname || '').trim();
         if (!nick) {
-          nameFilled = true;
-          AL.log('warn', 'Форма ввода имени найдена, но имя участника не задано в настройках');
-          AL.post({ type: 'nicknameRequired' });
-        } else {
-          AL.setInputValue(input, nick);
-          nameFilled = true;
-          AL.log('info', 'Имя участника введено: ' + nick);
+          // Имени нет ни на странице, ни в настройках: просим его у пользователя
+          // в окне приложения и ждём — форму без имени отправлять бесполезно.
+          if (!askedName) {
+            askedName = true;
+            AL.log('warn', 'Нужно имя участника: форма входа просит его, а в параметрах пусто');
+            AL.post({ type: 'nicknameRequired' });
+          }
           return;
         }
+        AL.setInputValue(input, nick);
+        nameFilled = true;
+        filledAt = now;
+        enterTried = false;
+        AL.log('info', 'Имя участника введено: ' + nick);
+        return;
       }
 
       // 3. «Присоединиться» — жмём, пока форма не исчезнет
@@ -111,6 +121,14 @@
         AL.realClick(join);
         if (clicks === 1 || clicks % 10 === 0)
           AL.log('info', 'Нажимаю «' + AL.label(join) + '» (попытка ' + clicks + ')');
+        return;
+      }
+
+      // Имя вписано, а кнопка так и не включилась — пробуем Enter.
+      if (!join && input && typed.length > 1 && filledAt && now - filledAt > 2500 && !enterTried) {
+        enterTried = true;
+        AL.log('info', 'Кнопка входа осталась неактивной — отправляю форму по Enter');
+        AL.pressEnter(input);
         return;
       }
 

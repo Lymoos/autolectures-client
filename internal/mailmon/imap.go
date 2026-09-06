@@ -3,6 +3,7 @@ package mailmon
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type Monitor struct {
 
 	OnInvitation func(inv Invitation, subject string)
 	OnStatus     func(text string)
+	OnSettings   func(s config.Mail)
 	OnError      func(text string)
 }
 
@@ -111,9 +113,23 @@ func (m *Monitor) CheckNow() {
 	}
 }
 
-func (m *Monitor) Test(s config.Mail) error {
+// Test проверяет не только вход, но и чтение папки: раньше диалог рапортовал
+// об успехе, а мониторинг потом падал на SELECT.
+func (m *Monitor) Test(s config.Mail) (config.Mail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	defer cancel()
+	err := probe(ctx, s)
+	if err != nil && s.AutoSecurity() && brokenProtocol(err) {
+		alt := altSettings(s)
+		logger.Warnf(src, "%v — пробую %s:%d (%s)", err, alt.Host, alt.Port, modeName(alt.Mode()))
+		if err2 := probe(ctx, alt); err2 == nil {
+			return alt, nil
+		}
+	}
+	return s, err
+}
+
+func probe(ctx context.Context, s config.Mail) error {
 	c, err := dial(ctx, s)
 	if err != nil {
 		return err
@@ -122,30 +138,111 @@ func (m *Monitor) Test(s config.Mail) error {
 	if err := c.Login(s.User, s.Password).Wait(); err != nil {
 		return fmt.Errorf("неверный логин или пароль приложения (%s)", cleanErr(err))
 	}
+	if err := selectInbox(c); err != nil {
+		return err
+	}
 	_ = c.Logout().Wait()
 	return nil
 }
 
-func dial(ctx context.Context, s config.Mail) (*imapclient.Client, error) {
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+func modeName(mode string) string {
+	if mode == config.MailStartTLS {
+		return "STARTTLS"
+	}
+	return "SSL/TLS"
+}
+
+func dialMode(ctx context.Context, addr, mode string) (*imapclient.Client, error) {
 	type res struct {
 		c   *imapclient.Client
 		err error
 	}
 	ch := make(chan res, 1)
 	go func() {
-		c, err := imapclient.DialTLS(addr, nil)
+		var c *imapclient.Client
+		var err error
+		if mode == config.MailStartTLS {
+			c, err = imapclient.DialStartTLS(addr, nil)
+		} else {
+			c, err = imapclient.DialTLS(addr, nil)
+		}
 		ch <- res{c, err}
 	}()
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("почтовый сервер %s не ответил вовремя", s.Host)
+		return nil, ctx.Err()
 	case r := <-ch:
-		if r.err != nil {
-			return nil, fmt.Errorf("не удалось подключиться к %s: %s", s.Host, cleanErr(r.err))
-		}
-		return r.c, nil
+		return r.c, r.err
 	}
+}
+
+// Порт 993 говорит по TLS сразу, 143 — открытым текстом с переходом на TLS
+// командой STARTTLS. Если способ не выбран руками, пробуем оба: сервер вроде
+// imap.mirea.ru отвечает только на второй.
+func dial(ctx context.Context, s config.Mail) (*imapclient.Client, error) {
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	modes := []string{s.Mode()}
+	if s.AutoSecurity() {
+		if modes[0] == config.MailSSL {
+			modes = append(modes, config.MailStartTLS)
+		} else {
+			modes = append(modes, config.MailSSL)
+		}
+	}
+	var last error
+	for i, mode := range modes {
+		c, err := dialMode(ctx, addr, mode)
+		if err == nil {
+			if i > 0 {
+				logger.Infof(src, "%s подключён по %s", s.Host, modeName(mode))
+			}
+			return c, nil
+		}
+		last = err
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("почтовый сервер %s не ответил вовремя", s.Host)
+		}
+		logger.Debugf(src, "%s по %s: %s", addr, modeName(mode), cleanErr(err))
+	}
+	hint := ""
+	if s.AutoSecurity() {
+		hint = ". Проверьте порт: 993 для SSL/TLS, 143 для STARTTLS"
+	}
+	return nil, fmt.Errorf("не удалось подключиться к %s по %s: %s%s",
+		s.Host, modeName(s.Mode()), cleanErr(last), hint)
+}
+
+// Обычно входящие лежат в INBOX, но некоторые серверы прячут их за префиксом
+// или под локализованным именем — тогда ищем папку в списке, а заодно кладём
+// весь список в журнал, чтобы было по чему разбираться.
+func selectInbox(c *imapclient.Client) error {
+	_, first := c.Select("INBOX", nil).Wait()
+	if first == nil {
+		return nil
+	}
+	boxes, err := c.List("", "*", nil).Collect()
+	if err != nil {
+		return fmt.Errorf("не удалось открыть папку «Входящие»: %s", cleanErr(first))
+	}
+	names := make([]string, 0, len(boxes))
+	for _, b := range boxes {
+		names = append(names, b.Mailbox)
+	}
+	logger.Debugf(src, "Папки на сервере: %s", strings.Join(names, ", "))
+	for _, b := range boxes {
+		low := strings.ToLower(b.Mailbox)
+		if slices.Contains(b.Attrs, imap.MailboxAttrNoSelect) {
+			continue
+		}
+		if low != "inbox" && !strings.HasSuffix(low, "inbox") && !strings.Contains(low, "входящ") {
+			continue
+		}
+		if _, err := c.Select(b.Mailbox, nil).Wait(); err == nil {
+			logger.Infof(src, "Входящие открыты как «%s»", b.Mailbox)
+			return nil
+		}
+	}
+	return fmt.Errorf("не удалось открыть папку «Входящие»: %s", cleanErr(first))
 }
 
 func cleanErr(err error) string {
@@ -171,7 +268,21 @@ func (m *Monitor) check(ctx context.Context) {
 		m.mu.Unlock()
 	}()
 
-	if err := m.fetchNew(ctx, s); err != nil {
+	err := m.fetchNew(ctx, s)
+	// Часть серверов (например, imap.mirea.ru на 143) ломает разбор ответов
+	// посреди сессии. Если способ подключения не выбран руками, пробуем вторую
+	// пару «порт + шифрование» и запоминаем ту, что заработала.
+	if err != nil && ctx.Err() == nil && s.AutoSecurity() && brokenProtocol(err) {
+		alt := altSettings(s)
+		logger.Warnf(src, "%v — пробую %s:%d (%s)", err, alt.Host, alt.Port, modeName(alt.Mode()))
+		if err2 := m.fetchNew(ctx, alt); err2 == nil {
+			m.remember(alt)
+			err = nil
+		} else if ctx.Err() == nil {
+			logger.Warnf(src, "%v", err2)
+		}
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
@@ -186,6 +297,37 @@ func (m *Monitor) check(ctx context.Context) {
 	}
 }
 
+// brokenProtocol отличает «сервер отвечает не по IMAP» от нормальных ошибок
+// вроде неверного пароля: во втором случае перебирать порты бессмысленно.
+func brokenProtocol(err error) bool {
+	t := strings.ToLower(err.Error())
+	for _, mark := range []string{"unknown tag", "response-tagged", "unexpected", "malformed", "handshake", "eof", "не удалось подключиться"} {
+		if strings.Contains(t, mark) {
+			return true
+		}
+	}
+	return false
+}
+
+func altSettings(s config.Mail) config.Mail {
+	alt := s
+	if s.Mode() == config.MailStartTLS {
+		alt.Security, alt.Port = config.MailSSL, 993
+	} else {
+		alt.Security, alt.Port = config.MailStartTLS, 143
+	}
+	return alt
+}
+
+func (m *Monitor) remember(s config.Mail) {
+	logger.Infof(src, "Почта работает через %s:%d (%s) — запомнил эти настройки", s.Host, s.Port, modeName(s.Mode()))
+	config.Get().SetMailSettings(s)
+	m.SetSettings(s)
+	if m.OnSettings != nil {
+		m.OnSettings(s)
+	}
+}
+
 func (m *Monitor) fetchNew(ctx context.Context, s config.Mail) error {
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -197,8 +339,8 @@ func (m *Monitor) fetchNew(ctx context.Context, s config.Mail) error {
 	if err := c.Login(s.User, s.Password).Wait(); err != nil {
 		return fmt.Errorf("неверный логин или пароль приложения (%s)", cleanErr(err))
 	}
-	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-		return fmt.Errorf("не удалось открыть папку «Входящие»")
+	if err := selectInbox(c); err != nil {
+		return err
 	}
 
 	lastUID := config.Get().MailLastUID()

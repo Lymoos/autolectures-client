@@ -4,7 +4,6 @@ package win
 
 import (
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -28,7 +27,6 @@ type Window struct {
 
 	OnResize   func(w, h int32)
 	OnClose    func() bool
-	OnHotKey   func(id int)
 	OnTray     func()
 	OnMenu     func(id int)
 	OnDpi      func(dpi int)
@@ -164,7 +162,9 @@ func (w *Window) Redraw() {
 	_, _, _ = pUpdateWindow.Call(w.HWnd)
 }
 
-func (w *Window) Quit() { PostMessage(w.HWnd, WM_DESTROY, 0, 0) }
+// WM_DESTROY только просил цикл сообщений завершиться, само окно оставалось на
+// экране до конца выхода — при обновлении это выглядело как зависший «Перезапуск…».
+func (w *Window) Quit() { PostMessage(w.HWnd, WM_CLOSE, 0, 0) }
 
 func (w *Window) Dispatch(fn func()) {
 	w.queueMu.Lock()
@@ -288,12 +288,6 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		}
 		return 0
 
-	case WM_HOTKEY:
-		if w.OnHotKey != nil {
-			w.OnHotKey(int(wp))
-		}
-		return 0
-
 	case WM_APP_TRAY:
 		switch uint32(lp & 0xFFFF) {
 		case WM_LBUTTONUP, WM_LBUTTONDBLCLK:
@@ -388,54 +382,4 @@ func (w *Window) showTrayMenu() {
 	_, _, _ = pTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON|TPM_BOTTOMALIGN, uintptr(pt.X), uintptr(pt.Y), 0, w.HWnd, 0)
 	PostMessage(w.HWnd, WM_NULL, 0, 0)
 	_, _, _ = pDestroyMenu.Call(menu)
-}
-
-func ParseHotKey(seq string) (mods, vk uint32, ok bool) {
-	parts := strings.Split(seq, "+")
-	for _, p := range parts {
-		p = strings.TrimSpace(strings.ToUpper(p))
-		switch p {
-		case "CTRL", "CONTROL":
-			mods |= MOD_CONTROL
-		case "SHIFT":
-			mods |= MOD_SHIFT
-		case "ALT":
-			mods |= MOD_ALT
-		case "WIN", "META":
-			mods |= MOD_WIN
-		case "":
-		default:
-			switch {
-			case len(p) == 1 && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= '0' && p[0] <= '9')):
-				vk = uint32(p[0])
-			case strings.HasPrefix(p, "F") && len(p) <= 3:
-				n := 0
-				for _, c := range p[1:] {
-					if c < '0' || c > '9' {
-						return 0, 0, false
-					}
-					n = n*10 + int(c-'0')
-				}
-				if n < 1 || n > 24 {
-					return 0, 0, false
-				}
-				vk = 0x70 + uint32(n-1)
-			case p == "SPACE":
-				vk = 0x20
-			case p == "ESC" || p == "ESCAPE":
-				vk = 0x1B
-			case p == "HOME":
-				vk = 0x24
-			case p == "END":
-				vk = 0x23
-			case p == "INSERT" || p == "INS":
-				vk = 0x2D
-			case p == "PAUSE":
-				vk = 0x13
-			default:
-				return 0, 0, false
-			}
-		}
-	}
-	return mods | MOD_NOREPEAT, vk, vk != 0
 }

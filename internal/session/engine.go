@@ -95,6 +95,7 @@ type Engine struct {
 	joined         bool
 	lastValidation time.Time
 	nickname       string
+	people         int
 	scanEnabled    bool
 	antiAfk        bool
 	volume         int
@@ -119,6 +120,7 @@ type Engine struct {
 	OnTitle            func(title string)
 	OnMarked           func(url string)
 	OnPresence         func()
+	OnParticipants     func(count int)
 	OnAuthRequired     func(url string)
 	OnAttendance       func(status, text string)
 	OnEscoStatus       func(ok bool, name string)
@@ -162,6 +164,8 @@ func (e *Engine) CurrentTitle() string {
 	return e.currentTitle
 }
 func (e *Engine) AttendanceDone() bool { e.mu.Lock(); defer e.mu.Unlock(); return e.attendanceDone }
+
+func (e *Engine) Participants() int { e.mu.Lock(); defer e.mu.Unlock(); return e.people }
 
 func (e *Engine) Seconds() int64 {
 	e.mu.Lock()
@@ -214,6 +218,7 @@ func (e *Engine) Start(raw string) {
 		e.Stop()
 	}
 	e.mu.Lock()
+	e.people = 0
 	e.attendanceDone, e.joined = false, false
 	e.currentURL, e.currentTitle = u, "Трансляция"
 	e.startedAt = time.Now()
@@ -398,6 +403,15 @@ func (e *Engine) onPageMessage(text string) {
 			map[string]any{"url": e.CurrentURL()})
 		if e.OnPresence != nil {
 			e.OnPresence()
+		}
+	case "participants":
+		n, _ := m["count"].(float64)
+		e.mu.Lock()
+		changed := int(n) != e.people
+		e.people = int(n)
+		e.mu.Unlock()
+		if changed && e.OnParticipants != nil {
+			e.OnParticipants(int(n))
 		}
 	case "qr":
 		u, _ := m["url"].(string)
