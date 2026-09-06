@@ -1,4 +1,3 @@
-// Логика интерфейса. Источник данных — событие 'state' от Go.
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -39,7 +38,7 @@
     document.querySelectorAll('#tabs .tab').forEach(function (b) { b.classList.toggle('active', +b.dataset.tab === i); });
     for (var k = 0; k < 3; k++) show($('page-' + k), k === i);
     AL.call('tab', { index: i });
-    if (i === 0) sendPreviewRect();
+    if (i === 0) sendPreviewRect(true);
   }
   document.querySelectorAll('#tabs .tab').forEach(function (b) { b.addEventListener('click', function () { showTab(+b.dataset.tab); }); });
 
@@ -55,11 +54,17 @@
   $('btn-tray').onclick = function () { AL.call('window', { cmd: 'tray' }); };
   $('btn-close').onclick = function () { AL.call('window', { cmd: 'close' }); };
 
-  function sendPreviewRect() {
-    var r = $('previewer').getBoundingClientRect();
-    AL.call('previewRect', { x: r.left, y: r.top, w: r.width, h: r.height, dpr: window.devicePixelRatio || 1 });
+  // Каждый вызов двигает нативное окно трансляции, поэтому шлём только
+  // изменившийся прямоугольник — иначе окно моргает на каждом обновлении статуса.
+  var lastRect = '';
+  function sendPreviewRect(force) {
+    var r = $('previewer').getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    var key = [r.left, r.top, r.width, r.height, dpr].join(':');
+    if (key === lastRect && force !== true) return;
+    lastRect = key;
+    AL.call('previewRect', { x: r.left, y: r.top, w: r.width, h: r.height, dpr: dpr });
   }
-  window.addEventListener('resize', sendPreviewRect);
+  window.addEventListener('resize', function () { sendPreviewRect(); });
 
   var volOpen = false;
   $('btn-volume').onclick = function (e) { e.stopPropagation(); volOpen = !volOpen; $('volume-pop').classList.toggle('open', volOpen); show($('volume-pop'), true); };
@@ -85,19 +90,20 @@
   $('btn-telegram').onclick = function () { openDialog('telegram'); telegramFlow(); };
   $('btn-esco').onclick = function () { AL.call(S.esco && S.esco.loginActive ? 'escoEnd' : 'escoBegin'); };
   $('btn-mail').onclick = function () { openDialog('mail'); loadMailForm(); };
-  $('btn-account').onclick = function () { openDialog('account'); accPage('acc'); };
+  $('btn-account').onclick = function () { openDialog('account'); };
+  $('btn-settings').onclick = function () { openDialog('settings'); fillSettings(); };
   $('btn-update').onclick = function () { AL.call('update'); };
 
   var dialog = null;
   function openDialog(name) {
     dialog = name;
-    ['account', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
+    ['account', 'settings', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
     show($('overlay'), true);
     AL.call('overlay', { open: true });
   }
   function closeDialog() {
     if (!dialog) return;
-    if (dialog === 'account') saveSettings();
+    if (dialog === 'settings') saveSettings();
     if (dialog === 'telegram') clearInterval(tgPoll);
     dialog = null;
     show($('overlay'), false);
@@ -112,12 +118,6 @@
 
   // аккаунт
   var registerMode = false;
-  function accPage(p) {
-    document.querySelectorAll('#dlg-account [data-page]').forEach(function (b) { b.classList.toggle('active', b.dataset.page === p); });
-    show($('acc-page'), p === 'acc'); show($('set-page'), p === 'set');
-    if (p === 'set') fillSettings();
-  }
-  document.querySelectorAll('#dlg-account [data-page]').forEach(function (b) { b.onclick = function () { accPage(b.dataset.page); }; });
   $('btn-switch').onclick = function () {
     registerMode = !registerMode;
     show($('acc-pass2'), registerMode); show($('btn-signup'), registerMode); show($('btn-signin'), !registerMode);
@@ -142,15 +142,47 @@
   $('btn-guest').onclick = function () { AL.call('guest'); closeDialog(); };
   $('btn-signout').onclick = function () { AL.call('logout'); };
 
+  // админские действия
+  function adminErr(t) { $('admin-err').textContent = t; show($('admin-err'), !!t); }
+  var resetArmed = false;
+  function armReset(on) {
+    resetArmed = on;
+    $('btn-reset').disabled = false;
+    $('btn-reset').textContent = on ? 'Точно? Нажмите ещё раз' : 'Снести все данные и перезапустить';
+    $('btn-reset').classList.toggle('armed', on);
+  }
+  $('btn-reset').onclick = function () {
+    if (!resetArmed) return armReset(true);
+    armReset(false);
+    $('btn-reset').disabled = true;
+    adminErr('');
+    AL.call('adminReset').catch(function (e) { $('btn-reset').disabled = false; adminErr(e.message); });
+  };
+  $('btn-onboard').onclick = function () {
+    adminErr('');
+    onboardingStarted = true;   // иначе обучение стартует ещё и из обработчика состояния
+    AL.call('adminOnboarding')
+      .then(function () { closeDialog(); startOnboarding(); })
+      .catch(function (e) { adminErr(e.message); });
+  };
+
+  // Сохраняем только то, что реально показали в форме: иначе закрытие диалога
+  // затирало бы имя и адрес сервера пустыми значениями.
+  var settingsLoaded = false;
   function fillSettings() {
     var s = S.settings || {};
-    $('set-nick').value = s.nickname || ''; $('set-group').value = s.group || ''; $('set-server').value = s.server || '';
-    $('set-boss').value = s.bossKey || ''; $('set-eco').checked = !!s.eco; $('set-tray').checked = !!s.tray;
+    $('set-nick').value = s.nickname || ''; $('set-server').value = s.server || '';
+    $('set-boss').value = s.bossKey || '';
+    show($('admin-box'), !!S.admin);
+    adminErr('');
+    armReset(false);
+    settingsLoaded = true;
   }
   function saveSettings() {
+    if (!settingsLoaded) return;
     AL.call('saveSettings', {
-      nickname: $('set-nick').value.trim(), group: $('set-group').value.trim(), server: $('set-server').value.trim(),
-      bossKey: $('set-boss').value.trim() || 'Ctrl+Shift+H', eco: $('set-eco').checked, tray: $('set-tray').checked
+      nickname: $('set-nick').value.trim(), server: $('set-server').value.trim(),
+      bossKey: $('set-boss').value.trim() || 'Ctrl+Shift+H'
     });
   }
 
@@ -218,7 +250,13 @@
   $('overlay').addEventListener('transitionend', function () {});
 
   $('btn-refresh').onclick = function () { AL.call('scheduleRefresh'); };
-  $('btn-group').onclick = function () { openDialog('account'); accPage('set'); };
+  function submitGroup() {
+    var v = $('sch-group').value.trim().toUpperCase();
+    $('sch-group').value = v;
+    AL.call('setGroup', { group: v });
+  }
+  $('sch-group').addEventListener('change', submitGroup);
+  $('sch-group').addEventListener('keydown', function (e) { if (e.key === 'Enter') { submitGroup(); this.blur(); } });
   var lastSig = '';
   var days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
   function dayLabel(d) {
@@ -235,8 +273,10 @@
     $('st-week').textContent = st.week_lessons || 0; $('st-attended').textContent = st.attended || 0; $('st-marked').textContent = st.marked || 0;
     var sec = st.seconds_inside || 0, h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
     $('st-time').textContent = h > 0 ? h + ' ч ' + m + ' мин' : m + ' мин';
-    $('sch-status').textContent = d.status || '';
-    $('sch-group').textContent = d.group ? '— ' + d.group : '— группа не указана';
+    if (document.activeElement !== $('sch-group') && $('sch-group').value !== (d.group || '')) $('sch-group').value = d.group || '';
+    $('sch-status').textContent = d.group ? (d.status || '')
+      : ((d.entries || []).length ? 'Группа не указана: показаны сохранённые занятия, расписание МИРЭА не обновляется'
+                                  : 'Впишите группу, чтобы загрузить расписание МИРЭА');
     var now = Date.now(), cutoff = now - 3 * 3600e3;
     var items = (d.entries || []).filter(function (e) { return e.id === d.activeId || new Date(e.end).getTime() >= cutoff; }).slice(0, 40);
     var sig = items.map(function (e) { return e.id + e.status + e.url; }).join('|') + d.activeId;
@@ -268,6 +308,7 @@
         + (e.url ? '<button class="btn subtle" data-open="' + esc(e.url) + '" title="' + esc(e.url) + '">Ссылка</button>'
                  + (active ? '' : '<button class="btn ghost" data-connect="' + esc(e.url) + '" data-title="' + esc(e.title) + '" title="Войти на эту трансляцию сейчас">Подключиться</button>')
                  : '<span class="dim">ссылка ещё не получена</span>')
+        + (active || e.source === 'schedule' ? '' : '<button class="icon-btn danger" data-remove="' + esc(e.id) + '" title="Убрать эту запись из списка"><span class="ico ico-close"></span></button>')
         + '</div></div>';
     });
     $('sch-list').innerHTML = html;
@@ -276,6 +317,7 @@
     var b = e.target.closest('button'); if (!b) return;
     if (b.dataset.open) AL.call('openUrl', { url: b.dataset.open });
     if (b.dataset.connect) { AL.call('connect', { url: b.dataset.connect, title: b.dataset.title }); showTab(0); }
+    if (b.dataset.remove) AL.call('scheduleRemove', { id: b.dataset.remove });
   });
 
   var minLevel = 1, logTotal = 0, levelNames = ['ОТЛАДКА', 'ИНФО', 'ПРЕДУПР', 'ОШИБКА'];
@@ -305,10 +347,10 @@
   var obSteps = [], obIndex = -1;
   function obStep(i) {
     obIndex = i; var s = obSteps[i]; showTab(s.tab || 0);
-    setTimeout(function () {
-      $('ob-title').textContent = s.title; $('ob-text').textContent = s.text;
-      $('ob-counter').textContent = (i + 1) + ' из ' + obSteps.length;
-      show($('ob-back'), i > 0); $('ob-next').textContent = i + 1 === obSteps.length ? 'Готово' : 'Далее';
+    $('ob-title').textContent = s.title; $('ob-text').textContent = s.text;
+    $('ob-counter').textContent = (i + 1) + ' из ' + obSteps.length;
+    show($('ob-back'), i > 0); $('ob-next').textContent = i + 1 === obSteps.length ? 'Готово' : 'Далее';
+    function place() {
       var tip = $('ob-tip'), hole = $('ob-hole'), W = window.innerWidth, H = window.innerHeight;
       var target = s.target && $(s.target), r = target ? target.getBoundingClientRect() : null;
       if (r) { hole.style.cssText = 'left:' + (r.left - 6) + 'px;top:' + (r.top - 6) + 'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px;'; hole.classList.remove('hidden'); }
@@ -323,7 +365,11 @@
       // Панель обязана целиком помещаться в окно
       x = Math.max(m, Math.min(x, W - tw - m)); y = Math.max(m, Math.min(y, H - th - m));
       tip.style.left = x + 'px'; tip.style.top = y + 'px';
-    }, 60);
+    }
+    // Страница въезжает анимацией, поэтому первое измерение уточняем, когда
+    // она встала на место: иначе рамка подсветки стоит со сдвигом.
+    setTimeout(place, 60);
+    setTimeout(place, 320);
   }
   function obFinish() { obIndex = -1; show($('onboard'), false); AL.call('onboardingDone'); AL.call('overlay', { open: false }); showTab(0); }
   $('ob-next').onclick = function () { if (obIndex + 1 >= obSteps.length) obFinish(); else obStep(obIndex + 1); };
@@ -331,13 +377,18 @@
   $('ob-skip').onclick = obFinish;
   function startOnboarding() {
     obSteps = [
-      { target: 'url', title: 'Ссылка на трансляцию', text: 'Вставьте ссылку MTS-Link. Если оставить поле пустым, ссылки будут приходить автоматически из расписания, почты или Telegram.' },
-      { target: 'auth-block', title: 'Авторизация', text: 'Telegram — команды и уведомления. ЕСКО — вход в систему МИРЭА для отметки по QR-коду. Почта — автоматический разбор приглашений на лекции.' },
-      { target: 'btn-start', title: 'Старт сессии', text: 'Одна кнопка запускает всё: соединение с сервером, планировщик по расписанию, мониторинг почты и вход на трансляцию.' },
-      { target: 'previewer', title: 'Live Previewer', text: 'Здесь идёт трансляция. В эко-режиме кадры не рендерятся, пока вы не нажмёте «Смотреть» — работают только звук, anti-AFK и сканер QR.' },
-      { target: 'tabs', title: 'Расписание и журнал', text: 'Ближайшие лекции, время в лекции, статус «Отмечено» и статистика. Все системные события собраны во вкладке «Журнал» (Ctrl+Shift+C копирует его целиком).' },
+      { target: 'url', title: 'Ссылка на трансляцию', text: 'Вставьте ссылку MTS-Link. Если оставить поле пустым, ссылки придут сами: из расписания, из письма или из Telegram.' },
+      { target: 'auth-block', title: 'Авторизация', text: 'Telegram — команды и уведомления. МИРЭА — вход в ЕСКО, без него не пройдёт отметка по QR-коду. Почта — разбор приглашений MTS-Link.' },
+      { target: 'btn-start', title: 'Старт сессии', text: 'Одна кнопка запускает всё: связь с сервером, планировщик по расписанию, мониторинг почты и вход на трансляцию.' },
+      { target: 'previewer', title: 'Live Previewer', text: 'Здесь идёт трансляция. В эко-режиме кадры не рисуются, пока вы не нажмёте «Смотреть» — звук, anti-AFK и сканер QR при этом работают.' },
+      { tab: 1, target: 'sch-group', title: 'Группа', text: 'Впишите группу как в расписании МИРЭА, например ИВБО-21-23, и нажмите Enter.' },
+      { tab: 1, target: 'sch-list', title: 'Список лекций', text: 'Здесь лекции из вашего расписания, справа у каждой — текущий статус.' },
+      { tab: 1, target: 'stats', title: 'Статистика', text: 'Занятий на неделе, сколько посещено, сколько раз отметка засчитана и общее время внутри трансляций.' },
+      { tab: 1, target: 'btn-refresh', title: 'Обновление расписания', text: 'Расписание перечитывается само, но кнопка перезагружает его сразу. Рядом видно, что получилось: сколько дистанционных занятий нашлось.' },
+      { target: 'btn-telegram', title: 'Если ссылка не пришла', text: 'Занятие началось, а ссылки нет — клиент ждёт письмо 15 минут и потом сам пишет вам в Telegram с просьбой прислать ссылку. Ответьте боту ссылкой, и он подключится. Туда же приходят старт лекции, подтверждение присутствия и результат отметки.' },
       { target: 'btn-volume', title: 'Громкость', text: 'Регулятор громкости трансляции, как в системном микшере Windows.' },
-      { target: 'btn-account', title: 'Аккаунт и параметры', text: 'Войдите для синхронизации настроек между устройствами или продолжайте как гость. Здесь же — имя участника, группа и Boss Key (' + ((S.settings || {}).bossKey || 'Ctrl+Shift+H') + ').' }
+      { target: 'btn-settings', title: 'Параметры', text: 'Имя, под которым клиент входит на трансляцию, адрес сервера и Boss Key (' + ((S.settings || {}).bossKey || 'Ctrl+Shift+H') + ') — мгновенно спрятать и вернуть окно.' },
+      { target: 'btn-account', title: 'Аккаунт', text: 'Войдите, чтобы настройки, ссылки и статусы синхронизировались между устройствами и работал Telegram, либо продолжайте как гость — тогда всё хранится только на этом ПК.' }
     ];
     show($('onboard'), true); AL.call('overlay', { open: true }); obStep(0);
   }
@@ -422,6 +473,6 @@
     sendPreviewRect();
   });
 
-  AL.call('ready').then(function () { sendPreviewRect(); });
-  new ResizeObserver(sendPreviewRect).observe($('previewer'));
+  AL.call('ready').then(function () { sendPreviewRect(true); });
+  new ResizeObserver(function () { sendPreviewRect(); }).observe($('previewer'));
 })();

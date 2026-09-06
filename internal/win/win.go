@@ -62,6 +62,8 @@ var (
 	pDwmExtendFrameIntoClientArea  = dwmapi.NewProc("DwmExtendFrameIntoClientArea")
 	pFillRect                      = user32.NewProc("FillRect")
 	pMessageBoxW                   = user32.NewProc("MessageBoxW")
+	pInvalidateRect                = user32.NewProc("InvalidateRect")
+	pUpdateWindow                  = user32.NewProc("UpdateWindow")
 	pCreateSolidBrush              = gdi32.NewProc("CreateSolidBrush")
 	pDeleteObject                  = gdi32.NewProc("DeleteObject")
 )
@@ -123,9 +125,12 @@ const (
 	SW_RESTORE  = 9
 	SW_SHOWNA   = 8
 
+	SWP_NOSIZE     = 0x0001
+	SWP_NOMOVE     = 0x0002
 	SWP_NOZORDER   = 0x0004
 	SWP_NOACTIVATE = 0x0010
 	SWP_SHOWWINDOW = 0x0040
+	SWP_HIDEWINDOW = 0x0080
 	SWP_NOCOPYBITS = 0x0100
 	HWND_TOP       = 0
 
@@ -162,6 +167,7 @@ const (
 	DWMWA_WINDOW_CORNER_PREFERENCE = 33
 	DWMWA_SYSTEMBACKDROP_TYPE      = 38
 	DWMWCP_ROUND                   = 2
+	DWMSBT_NONE                    = 1
 	DWMSBT_MAINWINDOW              = 2
 	DWMSBT_TRANSIENTWINDOW         = 3
 )

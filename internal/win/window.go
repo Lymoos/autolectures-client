@@ -18,6 +18,7 @@ type Window struct {
 	border   int32
 
 	transparent bool
+	splash      splashState
 
 	queueMu sync.Mutex
 	queue   []func()
@@ -100,6 +101,7 @@ func (w *Window) ApplyChrome(transparent bool) bool {
 		DwmExtendFrame(w.HWnd, MARGINS{1, 1, 1, 1})
 	}
 	w.transparent = false
+	DwmSet(w.HWnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE)
 	DwmExtendFrame(w.HWnd, MARGINS{1, 1, 1, 1})
 	return false
 }
@@ -111,14 +113,19 @@ func (w *Window) CreateChild() uintptr {
 }
 
 func PlaceChild(child uintptr, x, y, width, height int32, visible bool) {
-	flags := uint32(SWP_NOACTIVATE | SWP_NOCOPYBITS)
+	flags := uint32(SWP_NOACTIVATE | SWP_NOZORDER)
 	if visible {
 		flags |= SWP_SHOWWINDOW
+	} else {
+		flags |= SWP_HIDEWINDOW
 	}
-	SetWindowPos(child, HWND_TOP, x, y, width, height, flags)
-	if !visible {
-		ShowWindow(child, SW_HIDE)
-	}
+	SetWindowPos(child, 0, x, y, width, height, flags)
+}
+
+// RaiseChild поднимает окно над соседями: дочерние окна создаются под уже
+// существующими, поэтому показываемое поверх интерфейса окно нужно поднять.
+func RaiseChild(child uintptr) {
+	SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)
 }
 
 func (w *Window) Border() int32 {
@@ -151,6 +158,11 @@ func (w *Window) BeginDrag() {
 }
 
 func (w *Window) Close() { PostMessage(w.HWnd, WM_CLOSE, 0, 0) }
+
+func (w *Window) Redraw() {
+	_, _, _ = pInvalidateRect.Call(w.HWnd, 0, 1)
+	_, _, _ = pUpdateWindow.Call(w.HWnd)
+}
 
 func (w *Window) Quit() { PostMessage(w.HWnd, WM_DESTROY, 0, 0) }
 
@@ -233,7 +245,15 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		return 0
 
 	case WM_ERASEBKGND:
-		if !w.transparent {
+		if w.splash.active {
+			w.paintSplash(wp)
+			return 1
+		}
+		// Чёрный в расширенной рамке DWM — это прозрачность: так возвращается
+		// системный фон после экрана подготовки, а не остаются старые пиксели.
+		if w.transparent {
+			FillClient(w.HWnd, wp, 0x000000)
+		} else {
 			FillClient(w.HWnd, wp, 0x141414)
 		}
 		return 1
@@ -242,8 +262,13 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		if w.OnMinimize != nil {
 			w.OnMinimize(wp == 1)
 		}
-		if w.OnResize != nil && wp != 1 {
-			w.OnResize(loword(lp), hiword(lp))
+		if wp != 1 {
+			if w.splash.active {
+				w.RedrawSplash()
+			}
+			if w.OnResize != nil {
+				w.OnResize(loword(lp), hiword(lp))
+			}
 		}
 		return 0
 

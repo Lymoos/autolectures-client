@@ -24,8 +24,12 @@ type View struct {
 	Chromium *edge.Chromium
 	HWnd     uintptr
 	visible  bool
+	bounds   struct {
+		x, y, w, h int32
+		set        bool
+	}
 
-	OnMessage func(text string)
+	OnMessage   func(text string)
 	OnNavigated func(ok bool, status uint32)
 }
 
@@ -82,19 +86,33 @@ func New(host *win.Window, o Options) (*View, error) {
 	return v, nil
 }
 
+// Повторные вызовы с теми же координатами пропускаются: во время растягивания
+// окна лишние SetWindowPos и Resize дают заметное мигание.
 func (v *View) SetBounds(x, y, w, h int32, visible bool) {
-	win.PlaceChild(v.HWnd, x, y, w, h, visible)
-	if visible {
+	b := &v.bounds
+	moved := !b.set || b.x != x || b.y != y || b.w != w || b.h != h
+	if !moved && visible == v.visible {
+		return
+	}
+	if moved {
+		b.x, b.y, b.w, b.h, b.set = x, y, w, h, true
+		win.PlaceChild(v.HWnd, x, y, w, h, visible)
 		v.Chromium.Resize()
 	}
-	v.SetVisible(visible)
+	if visible != v.visible {
+		v.SetVisible(visible)
+	}
 }
 
 func (v *View) SetVisible(visible bool) {
+	if v.visible == visible {
+		return
+	}
 	v.visible = visible
 	_ = v.Chromium.GetController().PutIsVisible(visible)
 	if visible {
 		win.ShowWindow(v.HWnd, win.SW_SHOWNA)
+		win.RaiseChild(v.HWnd)
 	} else {
 		win.ShowWindow(v.HWnd, win.SW_HIDE)
 	}

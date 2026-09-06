@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/Lymoos/autolectures/client/internal/logger"
 )
 
 const defaultServer = "http://194.87.148.14:8000"
@@ -18,7 +19,7 @@ type Mail struct {
 	Port     int    `json:"port"`
 	User     string `json:"user"`
 	Password string `json:"password"`
-	Sender string `json:"sender,omitempty"`
+	Sender   string `json:"sender,omitempty"`
 }
 
 const DefaultSender = "mts-link.ru"
@@ -41,8 +42,6 @@ type Data struct {
 	Group             string            `json:"group"`
 	LastURL           string            `json:"last_url"`
 	MailMonitoring    bool              `json:"mail_monitoring"`
-	EcoMode           *bool             `json:"eco_mode,omitempty"`
-	MinimizeToTray    *bool             `json:"minimize_to_tray,omitempty"`
 	TransparentWindow *bool             `json:"transparent_window,omitempty"`
 	Volume            *int              `json:"volume,omitempty"`
 	BossKey           string            `json:"boss_key"`
@@ -73,7 +72,9 @@ func Get() *Config {
 	return instance
 }
 
-func (c *Config) init() {
+// BaseDir считается без обращения к синглтону: снос данных должен отработать
+// до первой загрузки конфига.
+func BaseDir() string {
 	base := os.Getenv("LOCALAPPDATA")
 	if base == "" {
 		var err error
@@ -81,7 +82,24 @@ func (c *Config) init() {
 			base, _ = os.UserHomeDir()
 		}
 	}
-	c.dataDir = filepath.Join(base, "Autolectures")
+	return filepath.Join(base, "Autolectures")
+}
+
+// WipeStorage удаляет конфиг и профиль браузера: клиент стартует как после
+// первой установки — гость, пустое расписание, обучение с нуля.
+func WipeStorage() error {
+	dir := BaseDir()
+	var first error
+	for _, name := range []string{"config.json", "config.json.tmp", "profile", "update"} {
+		if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
+func (c *Config) init() {
+	c.dataDir = BaseDir()
 	_ = os.MkdirAll(c.dataDir, 0o755)
 	c.path = filepath.Join(c.dataDir, "config.json")
 	c.load()
@@ -110,6 +128,37 @@ func (c *Config) load() {
 		d.Mail.Port = 993
 	}
 	c.d = d
+	if c.normalizeSecrets() {
+		c.save()
+	}
+}
+
+// Токен и пароль почты запечатаны DPAPI: на другом ПК или под другой учётной
+// записью Windows они не расшифруются, поэтому вход и почта сбрасываются, а не
+// подхватываются из скопированного config.json.
+func (c *Config) normalizeSecrets() bool {
+	resealed := false
+	if tok, ok := openPlain(c.d.AccessToken); !ok {
+		logger.Warnf("Настройки", "Сохранённый вход не принадлежит этому пользователю Windows — включён гостевой режим")
+		c.d.AccessToken = ""
+		c.d.Login = ""
+		c.d.Mode = "guest"
+		resealed = true
+	} else if tok != "" && !strings.HasPrefix(c.d.AccessToken, secretPrefix) {
+		c.d.AccessToken = sealPlain(tok)
+		resealed = true
+	}
+	if pass, ok := openSecret(c.d.Mail.Password); !ok {
+		logger.Warnf("Настройки", "Пароль почты не расшифровывается на этом ПК — подключите ящик заново")
+		c.d.Mail = Mail{Host: c.d.Mail.Host, Port: c.d.Mail.Port, User: c.d.Mail.User, Sender: c.d.Mail.Sender}
+		c.d.MailMonitoring = false
+		c.d.MailLastUID = 0
+		resealed = true
+	} else if pass != "" && !strings.HasPrefix(c.d.Mail.Password, secretPrefix) {
+		c.d.Mail.Password = sealSecret(pass)
+		resealed = true
+	}
+	return resealed
 }
 
 func (c *Config) save() {
@@ -187,10 +236,11 @@ func (c *Config) SetGuest(g bool) {
 func (c *Config) AccessToken() string {
 	var v string
 	c.read(func(d *Data) { v = d.AccessToken })
-	return v
+	tok, _ := openPlain(v)
+	return tok
 }
 func (c *Config) SetAccessToken(v string) {
-	c.set("access_token", func(d *Data) { d.AccessToken = v })
+	c.set("access_token", func(d *Data) { d.AccessToken = sealPlain(v) })
 }
 func (c *Config) Login() string     { var v string; c.read(func(d *Data) { v = d.Login }); return v }
 func (c *Config) SetLogin(v string) { c.set("login", func(d *Data) { d.Login = v }) }
@@ -215,14 +265,9 @@ func (c *Config) MailMonitoring() bool {
 func (c *Config) SetMailMonitoring(v bool) {
 	c.set("mail_monitoring", func(d *Data) { d.MailMonitoring = v })
 }
-func (c *Config) EcoMode() bool     { return c.flag(func(d *Data) *bool { return d.EcoMode }, true) }
-func (c *Config) SetEcoMode(v bool) { c.set("eco_mode", func(d *Data) { d.EcoMode = &v }) }
-func (c *Config) MinimizeToTray() bool {
-	return c.flag(func(d *Data) *bool { return d.MinimizeToTray }, true)
-}
-func (c *Config) SetMinimizeToTray(v bool) {
-	c.set("minimize_to_tray", func(d *Data) { d.MinimizeToTray = &v })
-}
+
+// Эко-режим включён всегда: он бережёт батарею и процессор.
+func (c *Config) EcoMode() bool { return true }
 func (c *Config) TransparentWindow() bool {
 	return c.flag(func(d *Data) *bool { return d.TransparentWindow }, true)
 }
@@ -272,11 +317,11 @@ func (c *Config) SetOnboardingDone(v bool) {
 func (c *Config) MailSettings() Mail {
 	var m Mail
 	c.read(func(d *Data) { m = d.Mail })
-	m.Password = deobfuscate(m.Password)
+	m.Password, _ = openSecret(m.Password)
 	return m
 }
 func (c *Config) SetMailSettings(m Mail) {
-	m.Password = obfuscate(m.Password)
+	m.Password = sealSecret(m.Password)
 	c.set("mail", func(d *Data) { d.Mail = m })
 }
 func (c *Config) MailLastUID() uint32 {
@@ -300,8 +345,6 @@ func (c *Config) Syncable() map[string]any {
 		"nickname":           c.Nickname(),
 		"group":              c.Group(),
 		"mail_monitoring":    c.MailMonitoring(),
-		"eco_mode":           c.EcoMode(),
-		"minimize_to_tray":   c.MinimizeToTray(),
 		"volume":             c.Volume(),
 		"boss_key":           c.BossKey(),
 		"transparent_window": c.TransparentWindow(),
@@ -318,12 +361,6 @@ func (c *Config) ApplySynced(s map[string]any) {
 	if v, ok := s["mail_monitoring"].(bool); ok {
 		c.SetMailMonitoring(v)
 	}
-	if v, ok := s["eco_mode"].(bool); ok {
-		c.SetEcoMode(v)
-	}
-	if v, ok := s["minimize_to_tray"].(bool); ok {
-		c.SetMinimizeToTray(v)
-	}
 	if v, ok := s["transparent_window"].(bool); ok {
 		c.SetTransparentWindow(v)
 	}
@@ -333,31 +370,4 @@ func (c *Config) ApplySynced(s map[string]any) {
 	if v, ok := s["boss_key"].(string); ok && v != "" {
 		c.SetBossKey(v)
 	}
-}
-
-const obfKey = "autolectures-local-key"
-
-func obfuscate(plain string) string {
-	if plain == "" {
-		return ""
-	}
-	b := []byte(plain)
-	for i := range b {
-		b[i] ^= obfKey[i%len(obfKey)]
-	}
-	return base64.StdEncoding.EncodeToString(b)
-}
-
-func deobfuscate(stored string) string {
-	if stored == "" {
-		return ""
-	}
-	b, err := base64.StdEncoding.DecodeString(stored)
-	if err != nil {
-		return ""
-	}
-	for i := range b {
-		b[i] ^= obfKey[i%len(obfKey)]
-	}
-	return string(b)
 }

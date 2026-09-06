@@ -10,7 +10,9 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unsafe"
@@ -37,6 +39,8 @@ const (
 	src          = "Окно"
 	escoLoginURL = "https://attendance.mirea.ru/"
 	chromeUA     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+	adminLogin = "lymoos"
 
 	menuOpen   = 1
 	menuToggle = 2
@@ -123,6 +127,13 @@ func Run(assets Assets, opt Options) int {
 	}
 	logger.Debugf(src, "%s", map[bool]string{true: "Включён системный эффект Acrylic", false: "Окно непрозрачное"}[a.transparent])
 
+	if a.transparent {
+		// Пока идёт подготовка, окно непрозрачное: по стеклу текст не читается.
+		a.wnd.ApplyChrome(false)
+	}
+	a.splash("Подготовка рабочего окружения", -1)
+	a.wnd.Show()
+
 	profile := filepath.Join(cfg.DataDir(), "profile")
 	var err error
 	if a.ui, err = a.newView(webview.Options{DataDir: profile, Transparent: a.transparent, Kiosk: true}); err != nil {
@@ -137,11 +148,14 @@ func Run(assets Assets, opt Options) int {
 		logger.Errorf(src, "%v", err)
 		return 1
 	}
+	// До готовности интерфейса виден только экран подготовки.
+	a.ui.SetVisible(false)
 	a.stage.SetUserAgent(chromeUA)
 	a.auth.SetUserAgent(chromeUA)
 	a.stage.SetVisible(false)
 	a.auth.SetVisible(false)
 
+	a.splash("Запуск интерфейса", -1)
 	a.createServices(assets)
 	a.wireWindow()
 	a.wireBridge()
@@ -158,7 +172,8 @@ func Run(assets Assets, opt Options) int {
 	html = strings.Replace(html, "/*JS*/", assets.JS, 1)
 	a.ui.NavigateHTML(html)
 	a.layout()
-	a.wnd.Show()
+	// Если интерфейс почему-то не отзовётся, экран подготовки не должен висеть вечно.
+	time.AfterFunc(12*time.Second, func() { a.dispatch(a.hideSplash) })
 
 	a.scheduler.Load()
 	go a.account.RestoreSession()
@@ -317,7 +332,7 @@ func (a *App) wireServices() {
 
 	a.cfg.OnChange(func(key string) {
 		switch key {
-		case "nickname", "group", "mail_monitoring", "eco_mode", "minimize_to_tray", "volume", "boss_key", "transparent_window":
+		case "nickname", "group", "mail_monitoring", "volume", "boss_key", "transparent_window":
 			a.account.PushSettings()
 		}
 		a.dispatch(func() {
@@ -326,8 +341,6 @@ func (a *App) wireServices() {
 				a.engine.SetNickname(a.cfg.Nickname())
 			case "group":
 				go a.scheduler.Refresh()
-			case "eco_mode":
-				a.eco.SetEnabled(a.cfg.EcoMode())
 			case "volume":
 				a.engine.SetVolume(a.cfg.Volume())
 			case "boss_key":
@@ -408,12 +421,6 @@ func (a *App) wireWindow() {
 	a.wnd.OnDpi = func(int) { a.layout() }
 	a.wnd.OnMinimize = func(min bool) { a.eco.SetWindowVisible(!min) }
 	a.wnd.OnClose = func() bool {
-		if !a.quitting && a.cfg.MinimizeToTray() {
-			a.wnd.Hide()
-			a.eco.SetWindowVisible(false)
-			logger.Infof(src, "Окно свёрнуто в трей, приложение продолжает работу")
-			return false
-		}
 		a.quitting = true
 		return true
 	}
@@ -471,13 +478,28 @@ func (a *App) restore() {
 	a.eco.SetWindowVisible(true)
 }
 
+func (a *App) hideSplash() {
+	if !a.wnd.SplashActive() {
+		return
+	}
+	a.wnd.HideSplash()
+	if a.transparent {
+		a.wnd.ApplyChrome(true)
+	}
+	// Сначала стираем экран подготовки, пока окна WebView2 ещё скрыты: прозрачная
+	// страница показывает поверхность родителя, и старые пиксели остались бы видны.
+	a.wnd.Redraw()
+	a.layout()
+}
+
 func (a *App) layout() {
 	r := win.GetClientRect(a.wnd.HWnd)
 	b := a.wnd.Border()
-	a.ui.SetBounds(b, b, max32(r.Width()-2*b, 1), max32(r.Height()-2*b, 1), true)
+	shown := !a.wnd.SplashActive()
+	a.ui.SetBounds(b, b, max32(r.Width()-2*b, 1), max32(r.Height()-2*b, 1), shown)
 
 	x, y, w, h, haveRect := a.previewBounds(b)
-	showLogin := haveRect && a.loginActive
+	showLogin := shown && haveRect && a.loginActive
 	a.auth.SetBounds(x, y, max32(w, 1), max32(h, 1), showLogin)
 	a.stage.SetBounds(x, y, max32(w, 1), max32(h, 1), a.stageShown())
 }
@@ -505,6 +527,9 @@ func (a *App) scheduleEscoCheck(after time.Duration) {
 }
 
 func (a *App) stageShown() bool {
+	if a.wnd.SplashActive() {
+		return false
+	}
 	_, _, _, _, haveRect := a.previewBounds(a.wnd.Border())
 	return haveRect && !a.loginActive && a.engine.Active() && !a.eco.LowPower()
 }
@@ -565,6 +590,7 @@ func (a *App) registerHandlers() {
 	h := a.br.Handle
 	h("ready", func(*Call) (any, error) {
 		a.uiReady = true
+		a.hideSplash()
 		a.emitState()
 		a.emitSchedule()
 		return nil, nil
@@ -638,13 +664,10 @@ func (a *App) registerHandlers() {
 	h("logout", func(*Call) (any, error) { go a.account.SignOut(); return nil, nil })
 	h("saveSettings", func(c *Call) (any, error) {
 		a.cfg.SetNickname(c.Str("nickname"))
-		a.cfg.SetGroup(c.Str("group"))
 		if s := c.Str("server"); s != "" {
 			a.cfg.SetServerURL(s)
 		}
 		a.cfg.SetBossKey(c.Str("bossKey"))
-		a.cfg.SetEcoMode(c.Bool("eco"))
-		a.cfg.SetMinimizeToTray(c.Bool("tray"))
 		return nil, nil
 	})
 
@@ -732,7 +755,26 @@ func (a *App) registerHandlers() {
 		return nil, nil
 	})
 
+	h("setGroup", func(c *Call) (any, error) {
+		g := c.Str("group")
+		if g == a.cfg.Group() {
+			return nil, nil
+		}
+		a.cfg.SetGroup(g)
+		if a.cfg.Group() == "" {
+			logger.Infof(src, "Группа очищена, расписание МИРЭА больше не обновляется")
+		} else {
+			logger.Infof(src, "Группа изменена на %s", a.cfg.Group())
+		}
+		return nil, nil
+	})
 	h("scheduleRefresh", func(*Call) (any, error) { go a.scheduler.RefreshNow(); return nil, nil })
+	h("scheduleRemove", func(c *Call) (any, error) {
+		if a.scheduler.Remove(c.Str("id")) > 0 {
+			logger.Infof(src, "Занятие удалено из списка")
+		}
+		return nil, nil
+	})
 	h("connect", func(c *Call) (any, error) {
 		u, t := c.Str("url"), c.Str("title")
 		if !a.globalSession {
@@ -750,6 +792,21 @@ func (a *App) registerHandlers() {
 		return nil, nil
 	})
 	h("onboardingDone", func(*Call) (any, error) { a.cfg.SetOnboardingDone(true); return nil, nil })
+	h("adminOnboarding", func(*Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("действие доступно только администратору")
+		}
+		a.cfg.SetOnboardingDone(false)
+		logger.Infof(src, "Обучение запущено заново")
+		a.emitState()
+		return nil, nil
+	})
+	h("adminReset", func(*Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("действие доступно только администратору")
+		}
+		return nil, a.resetEverything()
+	})
 	h("update", func(*Call) (any, error) {
 		a.updProgress = 0
 		a.emitState()
@@ -758,11 +815,38 @@ func (a *App) registerHandlers() {
 	})
 }
 
+func (a *App) isAdmin() bool {
+	return a.account.Authorized() && strings.EqualFold(a.account.Login(), adminLogin)
+}
+
+// resetEverything сносит конфиг и профиль браузера и поднимает клиент заново:
+// удалять занятые файлы может только следующий процесс, поэтому чистка
+// выполняется при старте с ключом --reset.
+func (a *App) resetEverything() error {
+	self, err := os.Executable()
+	if err != nil {
+		return errors.New("не удалось определить путь к приложению")
+	}
+	a.stopGlobalSession()
+	a.engine.Stop()
+	a.mail.Stop()
+	cmd := exec.Command(self, "--reset", strconv.Itoa(os.Getpid()))
+	cmd.Dir = filepath.Dir(self)
+	if err := cmd.Start(); err != nil {
+		return errors.New("не удалось перезапустить клиент: " + err.Error())
+	}
+	logger.Warnf(src, "Сброс данных: конфиг и профиль будут удалены, клиент перезапускается")
+	a.quitting = true
+	a.wnd.Quit()
+	return nil
+}
+
 func (a *App) snapshot() map[string]any {
 	m := a.cfg.MailSettings()
 	return map[string]any{
 		"version":       a.opt.Version,
 		"transparent":   a.transparent,
+		"admin":         a.isAdmin(),
 		"account":       map[string]any{"guest": !a.account.Authorized(), "login": a.account.Login()},
 		"connection":    map[string]any{"online": a.hub.Connected()},
 		"globalSession": a.globalSession,
@@ -783,7 +867,6 @@ func (a *App) snapshot() map[string]any {
 		"update":     map[string]any{"available": a.updater.Available(), "version": a.updater.Latest(), "notes": a.updNotes, "progress": a.updProgress},
 		"settings": map[string]any{
 			"nickname": a.cfg.Nickname(), "group": a.cfg.Group(), "server": a.cfg.ServerURL(), "bossKey": a.cfg.BossKey(),
-			"eco": a.cfg.EcoMode(), "tray": a.cfg.MinimizeToTray(), "transparent": a.cfg.TransparentWindow(),
 		},
 		"onboardingDone": a.cfg.OnboardingDone(),
 	}
