@@ -53,6 +53,7 @@ jobs:
       - name: build
         shell: pwsh
         run: |
+          .\scripts\versioninfo.ps1 -Version "${{ steps.ver.outputs.version }}"
           $env:CGO_ENABLED = "0"
           go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=${{ steps.ver.outputs.version }}" -o autolectures-windows-x64.exe .
           (Get-FileHash autolectures-windows-x64.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline autolectures-windows-x64.exe.sha256

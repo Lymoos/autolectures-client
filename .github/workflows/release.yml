@@ -19,6 +19,7 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ github.ref_name }}".TrimStart("v")
+          .\scripts\versioninfo.ps1 -Version $v
           $env:CGO_ENABLED = "0"
           go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=$v" -o autolectures-windows-x64.exe .
           (Get-FileHash autolectures-windows-x64.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline autolectures-windows-x64.exe.sha256
