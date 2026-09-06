@@ -91,6 +91,7 @@ type App struct {
 		x, y, w, h float64
 		dpr        float64
 	}
+	updating    bool
 	tab         int
 	mailStatus  string
 	idleHint    string
@@ -180,7 +181,7 @@ func Run(assets Assets, opt Options) int {
 	if cfg.Group() != "" {
 		go a.scheduler.Refresh()
 	}
-	time.AfterFunc(5*time.Second, func() { go a.updater.Check() })
+	go a.updater.Check()
 	a.scheduleEscoCheck(6 * time.Second)
 	go func() {
 		for range time.Tick(10 * time.Minute) {
@@ -396,10 +397,29 @@ func (a *App) wireServices() {
 			a.updNotes = notes
 			a.notifier.Notify(proto.EventUpdateAvailable, "Доступно обновление клиента "+v+". "+truncate(notes, 200), map[string]any{"version": v})
 			a.emitState()
+			a.autoUpdate(v)
 		})
 	}
-	a.updater.OnProgress = func(p int) { a.dispatch(func() { a.updProgress = p; a.emitState() }) }
-	a.updater.OnFailed = func(string) { a.dispatch(func() { a.updProgress = -1; a.emitState() }) }
+	a.updater.OnProgress = func(p int) {
+		a.dispatch(func() {
+			a.updProgress = p
+			if a.updating {
+				a.splash("Обновление до "+a.updater.Latest(), p)
+			}
+			a.emitState()
+		})
+	}
+	a.updater.OnFailed = func(msg string) {
+		a.dispatch(func() {
+			a.updProgress = -1
+			if a.updating {
+				a.updating = false
+				a.hideSplash()
+				a.idleHint = "Обновление не установилось: " + msg + ". Попробуйте кнопку «Обновить»"
+			}
+			a.emitState()
+		})
+	}
 	a.updater.OnRestart = func() { a.dispatch(func() { a.quitting = true; a.wnd.Quit() }) }
 }
 
@@ -476,6 +496,33 @@ func (a *App) toggleBossKey() {
 func (a *App) restore() {
 	a.wnd.Restore()
 	a.eco.SetWindowVisible(true)
+}
+
+// Клиент обновляется сам: пользователь мог не заходить неделю, и ловить его
+// кнопкой «Обновить» бессмысленно. Посреди лекции не лезем — только когда
+// сессия не запущена.
+func (a *App) autoUpdate(version string) {
+	if a.opt.Smoke || a.updating || a.quitting || a.updProgress >= 0 {
+		return
+	}
+	if a.globalSession || a.engine.Active() {
+		logger.Infof(src, "Обновление %s поставится после окончания сессии", version)
+		return
+	}
+	a.updating = true
+	a.updProgress = 0
+	logger.Infof(src, "Ставлю обновление %s автоматически", version)
+	a.showSplash("Обновление до " + version)
+	a.emitState()
+	go a.updater.DownloadAndInstall()
+}
+
+func (a *App) showSplash(text string) {
+	if !a.wnd.SplashActive() && a.transparent {
+		a.wnd.ApplyChrome(false)
+	}
+	a.splash(text, 0)
+	a.layout()
 }
 
 func (a *App) hideSplash() {
@@ -582,6 +629,10 @@ func (a *App) stopGlobalSession() {
 	a.idleHint = ""
 	logger.Infof(src, "Глобальная сессия остановлена")
 	a.emitState()
+	// Обновление, отложенное из-за лекции, ставим сразу после её конца.
+	if a.updater.Available() {
+		a.autoUpdate(a.updater.Latest())
+	}
 }
 
 func (a *App) wireBridge() {}
@@ -808,7 +859,12 @@ func (a *App) registerHandlers() {
 		return nil, a.resetEverything()
 	})
 	h("update", func(*Call) (any, error) {
+		if a.updating {
+			return nil, nil
+		}
+		a.updating = true
 		a.updProgress = 0
+		a.showSplash("Обновление до " + a.updater.Latest())
 		a.emitState()
 		go a.updater.DownloadAndInstall()
 		return nil, nil
