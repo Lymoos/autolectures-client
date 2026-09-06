@@ -12,8 +12,10 @@ import (
 
 var Version = "1.0.2"
 
+//go:embed web/index.html web/app.css web/app.js
 var webFS embed.FS
 
+//go:embed scripts/*.js
 var scriptsFS embed.FS
 
 func read(fs embed.FS, name string) string {

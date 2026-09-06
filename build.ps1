@@ -1,5 +1,5 @@
 # Сборка клиента «Автолекции» в один exe.
-param([switch]$Zip, [string]$Version = "")
+param([switch]$Release, [string]$Version = "")
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -18,12 +18,11 @@ if ($LASTEXITCODE -ne 0) { throw "go build завершился с ошибко�
 $size = [math]::Round((Get-Item dist\autolectures.exe).Length / 1MB, 1)
 Write-Host "Готово: dist\autolectures.exe ($size МБ)"
 
-if ($Zip) {
-    $zipPath = "dist\autolectures-windows-x64.zip"
-    if (Test-Path $zipPath) { Remove-Item $zipPath }
-    Compress-Archive -Path dist\autolectures.exe -DestinationPath $zipPath
-    $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
-    Set-Content -Path "$zipPath.sha256" -Value $hash -Encoding ascii
-    Write-Host "Архив: $zipPath"
+if ($Release) {
+    $relExe = "dist\autolectures-windows-x64.exe"
+    Copy-Item dist\autolectures.exe $relExe -Force
+    $hash = (Get-FileHash $relExe -Algorithm SHA256).Hash.ToLower()
+    Set-Content -Path "$relExe.sha256" -Value $hash -Encoding ascii -NoNewline
+    Write-Host "Файлы релиза: $relExe + .sha256"
     Write-Host "SHA-256: $hash"
 }

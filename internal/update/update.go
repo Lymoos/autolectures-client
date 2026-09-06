@@ -1,12 +1,9 @@
 package update
 
 import (
-	"archive/zip"
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -118,19 +115,21 @@ func (u *Updater) checkReleases() {
 	if json.Unmarshal(raw, &rel) != nil || rel.Tag == "" {
 		return
 	}
-	assetURL, shaURL := "", ""
+	assetURL, assetName := "", ""
+	shaURLs := map[string]string{}
 	for _, a := range rel.Assets {
 		if !strings.Contains(a.Name, platformKey) {
 			continue
 		}
-		if strings.HasSuffix(a.Name, ".zip") {
-			assetURL = a.URL
-		} else if strings.HasSuffix(a.Name, ".sha256") {
-			shaURL = a.URL
+		switch {
+		case strings.HasSuffix(a.Name, ".sha256"):
+			shaURLs[strings.TrimSuffix(a.Name, ".sha256")] = a.URL
+		case strings.HasSuffix(a.Name, ".exe"):
+			assetURL, assetName = a.URL, a.Name
 		}
 	}
 	sha := ""
-	if shaURL != "" {
+	if shaURL := shaURLs[assetName]; shaURL != "" {
 		if raw, err := u.get(shaURL, ""); err == nil {
 			sha = strings.ToLower(strings.Fields(string(raw) + " ")[0])
 		}
@@ -178,9 +177,8 @@ func (u *Updater) DownloadAndInstall() {
 	if u.OnProgress != nil {
 		u.OnProgress(70)
 	}
-	exeBytes, err := extractExe(data)
-	if err != nil {
-		fail(err.Error())
+	if len(data) < 2 || data[0] != 'M' || data[1] != 'Z' {
+		fail("Файл обновления повреждён")
 		return
 	}
 	self, err := os.Executable()
@@ -191,7 +189,7 @@ func (u *Updater) DownloadAndInstall() {
 	staging := filepath.Join(u.dataDir, "update")
 	_ = os.MkdirAll(staging, 0o755)
 	newExe := filepath.Join(staging, "autolectures-"+latest+".exe")
-	if err := os.WriteFile(newExe, exeBytes, 0o755); err != nil {
+	if err := os.WriteFile(newExe, data, 0o755); err != nil {
 		fail("Не удалось сохранить обновление: " + err.Error())
 		return
 	}
@@ -215,29 +213,6 @@ func (u *Updater) DownloadAndInstall() {
 	if u.OnRestart != nil {
 		u.OnRestart()
 	}
-}
-
-func extractExe(zipData []byte) ([]byte, error) {
-	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
-	if err != nil {
-		return nil, errors.New("Архив обновления повреждён")
-	}
-	var best *zip.File
-	for _, f := range zr.File {
-		name := strings.ToLower(filepath.Base(f.Name))
-		if strings.HasSuffix(name, ".exe") && !strings.Contains(name, "apply") && (best == nil || strings.HasPrefix(name, "autolectures")) {
-			best = f
-		}
-	}
-	if best == nil {
-		return nil, errors.New("В архиве обновления нет исполняемого файла")
-	}
-	rc, err := best.Open()
-	if err != nil {
-		return nil, errors.New("Не удалось распаковать обновление")
-	}
-	defer rc.Close()
-	return io.ReadAll(rc)
 }
 
 func copyFile(from, to string) error {

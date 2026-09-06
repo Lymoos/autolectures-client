@@ -20,11 +20,10 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}".TrimStart("v")
           $env:CGO_ENABLED = "0"
-          go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=$v" -o autolectures.exe .
-          Compress-Archive -Path autolectures.exe -DestinationPath autolectures-windows-x64.zip
-          (Get-FileHash autolectures-windows-x64.zip -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline autolectures-windows-x64.zip.sha256
+          go build -trimpath -ldflags "-s -w -H windowsgui -X main.Version=$v" -o autolectures-windows-x64.exe .
+          (Get-FileHash autolectures-windows-x64.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline autolectures-windows-x64.exe.sha256
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            autolectures-windows-x64.zip
-            autolectures-windows-x64.zip.sha256
+            autolectures-windows-x64.exe
+            autolectures-windows-x64.exe.sha256
