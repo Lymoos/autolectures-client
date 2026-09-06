@@ -1,0 +1,236 @@
+/* ===================================================================
+   Автолекции — строгое матовое стекло. Тёмно-серые полупрозрачные панели
+   с размытием, плавные ease-in/ease-out переходы.
+   =================================================================== */
+:root {
+  --text: #EDEFF3; --muted: #A7ACB8; --dim: #6E7380;
+  --accent: #7AA2F7; --accent-h: #92B4FF;
+  --ok: #7ED4A6; --warn: #F2C879; --danger: #F28B82;
+  --glass: rgba(44,47,54,.62); --glass-strong: rgba(36,38,44,.88);
+  --border: rgba(255,255,255,.09); --hl: rgba(255,255,255,.16);
+  --r: 14px; --rs: 9px;
+  --fast: 140ms; --normal: 240ms; --slow: 380ms;
+  --ease: cubic-bezier(.65,0,.35,1); --out: cubic-bezier(.33,1,.68,1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  font: 10pt "Segoe UI", system-ui, sans-serif; color: var(--text);
+  background: linear-gradient(160deg, #1b1d22 0%, #15171b 100%);
+  -webkit-user-select: none; user-select: none; cursor: default;
+}
+body.transparent { background: rgba(24,26,31,.55); }
+#app { display: flex; flex-direction: column; height: 100%; }
+.hidden { display: none !important; }
+.spacer { flex: 1; }
+.caption { color: var(--muted); font-size: 8.5pt; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; }
+.caption.mt { margin-top: 14px; }
+.muted { color: var(--muted); }
+.dim { color: var(--dim); font-size: 9pt; }
+.center { text-align: center; }
+.mono { font-family: Consolas, "Cascadia Mono", monospace; }
+.h2 { font-size: 12pt; font-weight: 600; }
+.title { font-size: 15pt; font-weight: 600; }
+.err { color: var(--danger); }
+input, button { font: inherit; color: inherit; }
+input::placeholder { color: var(--dim); }
+
+/* ---------- стекло ---------- */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* ---------- кнопки ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 38px; padding: 0 16px; border-radius: var(--rs); border: 1px solid transparent;
+  background: rgba(255,255,255,.06); cursor: pointer; white-space: nowrap;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease),
+              transform 90ms var(--ease), color var(--fast) var(--ease), opacity var(--normal) var(--ease);
+}
+.btn:hover { background: rgba(255,255,255,.12); border-color: var(--hl); }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .45; cursor: default; transform: none; }
+.btn.primary { background: var(--accent); color: #12141a; font-weight: 600; border-color: rgba(255,255,255,.18); }
+.btn.primary:hover { background: var(--accent-h); }
+.btn.danger { background: var(--danger); color: #12141a; font-weight: 600; }
+.btn.danger:hover { filter: brightness(1.08); }
+.btn.ghost { background: rgba(255,255,255,.055); border-color: rgba(255,255,255,.11); }
+.btn.subtle { background: transparent; color: var(--muted); }
+.btn.subtle:hover { background: rgba(255,255,255,.08); color: var(--text); }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 9.5pt; }
+.btn.big { height: 48px; border-radius: 12px; font-size: 11pt; }
+.icon-btn {
+  width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background var(--fast) var(--ease), transform 90ms var(--ease);
+}
+.icon-btn:hover { background: rgba(255,255,255,.10); }
+.icon-btn.danger:hover { background: rgba(242,139,130,.28); }
+.icon-btn:active { transform: scale(.94); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); margin-left: auto; transition: background var(--normal) var(--ease); }
+.dot.on { background: var(--ok); }
+.auth-btn { width: 100%; justify-content: flex-start; height: 40px; }
+.auth-btn .dot { margin-left: auto; }
+
+/* ---------- иконки (маски из SVG) ---------- */
+.ico { width: 18px; height: 18px; display: inline-block; background: currentColor; flex: none;
+  -webkit-mask: var(--m) center/contain no-repeat; mask: var(--m) center/contain no-repeat; }
+.ico-volume { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z'/%3E%3Cpath d='M15.5 9.2a4 4 0 0 1 0 5.6'/%3E%3Cpath d='M18.2 6.5a8 8 0 0 1 0 11'/%3E%3C/svg%3E"); }
+.ico-volume-muted { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z'/%3E%3Cpath d='M16 9.5l5 5M21 9.5l-5 5'/%3E%3C/svg%3E"); }
+.ico-update { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 12a8 8 0 1 1-2.3-5.7'/%3E%3Cpath d='M20 4v5h-5'/%3E%3C/svg%3E"); }
+.ico-telegram { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M21.5 3.6 2.9 10.8c-1.1.4-1.1 1.1-.2 1.4l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.5l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8L22.6 5c.3-1.2-.5-1.8-1.1-1.4zM8.8 13.4l9.6-6.1c.5-.3.9-.1.5.2l-8 7.2-.3 3.3-1.8-4.6z'/%3E%3C/svg%3E"); }
+.ico-esco { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 3 7.5l9 4.5 9-4.5z'/%3E%3Cpath d='M6.5 9.5v5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-5'/%3E%3Cpath d='M21 7.5v6'/%3E%3C/svg%3E"); }
+.ico-mail { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5.5' width='18' height='13' rx='2.5'/%3E%3Cpath d='m3.5 7 8.5 6 8.5-6'/%3E%3C/svg%3E"); }
+.ico-close { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6 6 18'/%3E%3C/svg%3E"); width: 16px; height: 16px; }
+.ico-minimize { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E"); width: 16px; height: 16px; }
+.ico-tray { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='2.5'/%3E%3Cpath d='M4 15h16'/%3E%3Cpath d='m9.5 9.5 2.5 2.5 2.5-2.5'/%3E%3C/svg%3E"); width: 16px; height: 16px; }
+.ico-play { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M7 5.5v13l11-6.5z'/%3E%3C/svg%3E"); }
+.ico-stop { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Crect x='6' y='6' width='12' height='12' rx='2.5'/%3E%3C/svg%3E"); }
+.ico-user { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4.5 20.5c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6'/%3E%3C/svg%3E"); width: 16px; height: 16px; }
+
+/* ---------- панель заголовка ---------- */
+#titlebar { height: 48px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 14px; border-bottom: 1px solid rgba(255,255,255,.06); flex: none; }
+.tb-left { display: flex; align-items: center; gap: 8px; height: 100%; padding-right: 14px; }
+.logo svg { width: 22px; height: 22px; fill: var(--accent); }
+.app-name { font-weight: 600; font-size: 10.5pt; }
+.conn { color: var(--dim); font-size: 9pt; }
+.conn.online { color: var(--ok); }
+.conn.local { color: var(--muted); }
+.tabs, .seg { display: flex; gap: 4px; }
+.tab { height: 30px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease), border-color var(--fast) var(--ease); }
+.tab:hover { background: rgba(255,255,255,.06); }
+.tab.active { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.16); color: var(--text); }
+.tb-spacer { flex: 1; height: 100%; }
+.tb-right { display: flex; align-items: center; gap: 4px; }
+#btn-account { height: 32px; }
+#btn-account .dot { margin-left: 4px; }
+
+/* громкость: горизонтальная всплывающая панель в строке заголовка */
+.volume-wrap { position: relative; display: flex; align-items: center; }
+.volume-pop {
+  position: absolute; right: 36px; top: 50%; transform: translateY(-50%) translateX(8px);
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px;
+  background: var(--glass-strong); border: 1px solid var(--border); border-radius: 10px;
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  opacity: 0; pointer-events: none; transition: opacity var(--normal) var(--out), transform var(--normal) var(--out);
+}
+.volume-pop.open { opacity: 1; pointer-events: auto; transform: translateY(-50%) translateX(0); }
+.volume-pop input[type=range] { width: 140px; accent-color: var(--accent); }
+.volume-val { width: 28px; text-align: right; font-weight: 600; font-size: 9.5pt; }
+
+/* ---------- страницы ---------- */
+#main { flex: 1; position: relative; min-height: 0; }
+.page { position: absolute; inset: 0; padding: 12px 14px 14px; display: flex; gap: 12px; animation: pageIn var(--normal) var(--out); }
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#page-1, #page-2 { flex-direction: column; }
+
+/* боковая панель 25% + Live Previewer 75% */
+.sidebar { flex: 0 0 25%; min-width: 260px; display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.field { position: relative; }
+.field input, .form input, #acc-form input {
+  width: 100%; height: 38px; padding: 0 34px 0 12px; border-radius: var(--rs);
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10); outline: 0;
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.form input, #acc-form input { padding-right: 12px; }
+.field input:hover, .form input:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); }
+.field input:focus, .form input:focus, #acc-form input:focus { border-color: rgba(122,162,247,.85); background: rgba(255,255,255,.09); }
+.field .clear { position: absolute; right: 6px; top: 6px; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--dim); cursor: pointer; font-size: 14pt; line-height: 1; }
+.field .clear:hover { background: rgba(255,255,255,.1); color: var(--text); }
+.auth { display: flex; flex-direction: column; gap: 8px; }
+.mail-row { overflow: hidden; transition: max-height var(--slow) var(--ease), opacity var(--slow) var(--ease); max-height: 90px; opacity: 1; }
+.mail-row.collapsed { max-height: 0; opacity: 0; }
+.mail-row-inner { padding: 6px 4px 0; display: flex; flex-direction: column; gap: 4px; }
+.toggle-line { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.lecture-line { color: var(--ok); animation: pageIn var(--normal) var(--out); }
+#mode-hint { line-height: 1.35; }
+
+/* переключатель */
+.switch { position: relative; width: 46px; height: 26px; flex: none; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .knob { position: absolute; inset: 0; border-radius: 13px; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.12); transition: background var(--normal) var(--ease); }
+.switch .knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: transform var(--normal) var(--ease); }
+.switch input:checked + .knob { background: var(--accent); }
+.switch input:checked + .knob::after { transform: translateX(20px); }
+.switch input:disabled + .knob { opacity: .5; }
+
+/* Live Previewer */
+.previewer { flex: 1; position: relative; min-width: 0; border-radius: var(--r); overflow: hidden; }
+.placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; text-align: center;
+  transition: opacity var(--normal) var(--ease); }
+.placeholder.fade { opacity: 0; pointer-events: none; }
+.ph-title { font-size: 15pt; font-weight: 600; }
+.ph-text { color: var(--muted); max-width: 520px; line-height: 1.4; }
+.pill { display: flex; gap: 10px; align-items: center; margin-left: 10px; padding: 5px 12px; border-radius: 10px;
+  background: var(--glass-strong); font-size: 9pt; white-space: nowrap; animation: pageIn var(--normal) var(--out); }
+.pill .mono { color: var(--muted); }
+.marked { color: var(--ok); font-weight: 600; }
+/* Итог отметки по QR-коду: цвет = результат. */
+.attend { font-weight: 600; padding: 2px 8px; border-radius: 7px; animation: pageIn var(--normal) var(--out); }
+.attend.a-ok { color: var(--ok); background: rgba(126,212,166,.16); }
+.attend.a-warn { color: var(--warn); background: rgba(242,200,121,.16); }
+.attend.a-err { color: var(--danger); background: rgba(242,139,130,.18); }
+.eco { color: var(--warn); font-size: 8pt; font-weight: 700; letter-spacing: 1px; }
+
+/* расписание */
+.stats { display: flex; gap: 12px; }
+.stat { flex: 1; padding: 12px 16px; }
+.stat-val { font-size: 18pt; font-weight: 600; margin-top: 4px; }
+.list-head { display: flex; align-items: center; gap: 10px; }
+.list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 6px; }
+.day { color: var(--muted); font-size: 8.5pt; letter-spacing: 1px; font-weight: 600; margin-top: 4px; }
+.entry { display: grid; grid-template-columns: 56px 1fr auto; gap: 4px 14px; padding: 12px 16px; animation: pageIn var(--normal) var(--out); }
+.entry.active { background: rgba(122,162,247,.16); }
+.entry .time { grid-row: span 3; font-family: Consolas, monospace; font-size: 11pt; line-height: 1.35; }
+.entry .name { font-weight: 600; font-size: 10.5pt; }
+.entry .status { font-weight: 600; text-align: right; }
+.entry .meta { color: var(--dim); font-size: 9pt; }
+.entry .actions { grid-column: 2 / span 2; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.entry .btn { height: 28px; padding: 0 10px; font-size: 9pt; }
+.s-marked { color: var(--ok); } .s-live { color: var(--accent); } .s-missed { color: var(--danger); } .s-done { color: var(--warn); } .s-pending { color: var(--muted); }
+
+/* журнал */
+.log { flex: 1; overflow-y: auto; background: rgba(0,0,0,.18); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 8px; font: 9.5pt Consolas, "Cascadia Mono", monospace; -webkit-user-select: text; user-select: text; }
+.log div { padding: 2px 6px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.log .l0 { color: var(--dim); } .log .l1 { color: var(--muted); } .log .l2 { color: var(--warn); } .log .l3 { color: var(--danger); }
+
+/* ---------- скроллбар ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.32); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- оверлей и диалоги ---------- */
+.overlay { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(20,22,27,.55);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); animation: fadeIn var(--normal) var(--out); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.card { width: 480px; max-width: calc(100% - 40px); max-height: calc(100% - 40px); overflow: auto; padding: 20px 24px; background: var(--glass-strong); animation: cardIn var(--normal) var(--out); }
+@keyframes cardIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.dlg { display: flex; flex-direction: column; gap: 12px; }
+.dlg-head { display: flex; align-items: center; gap: 8px; }
+.dlg-actions { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+/* Страницы внутри диалога «Аккаунт» — такие же колонки с интервалами, как сам
+   диалог: без этого текст статуса, форма и кнопка выхода слипались. */
+#acc-page, #set-page { display: flex; flex-direction: column; gap: 12px; }
+#acc-form { display: flex; flex-direction: column; gap: 8px; }
+#acc-status, .msg, #tg-status { line-height: 1.45; }
+#btn-switch { margin-top: 2px; }
+#acc-form .dim.center { padding: 2px 0; }
+.form { display: flex; flex-direction: column; gap: 10px; }
+.form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 9.5pt; }
+.form label.toggle-line { flex-direction: row; align-items: center; color: var(--text); font-size: 10pt; }
+/* Группа переключателей отделяется от полей ввода, подпись — от переключателей. */
+.form label:not(.toggle-line) + label.toggle-line { margin-top: 6px; }
+.form > .dim:last-child { margin-top: 4px; line-height: 1.45; }
+.msg { line-height: 1.4; }
+
+/* ---------- онбординг ---------- */
+.onboard { position: absolute; inset: 0; z-index: 30; }
+.ob-hole { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(16,18,22,.55); border: 1.5px solid rgba(122,162,247,.8); pointer-events: none; transition: all var(--normal) var(--ease); }
+.ob-tip { position: absolute; width: 340px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 8px; background: rgba(52,55,63,.92); animation: cardIn var(--normal) var(--out); }
+.ob-actions { display: flex; align-items: center; gap: 8px; }

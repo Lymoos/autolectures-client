@@ -1,0 +1,374 @@
+﻿package config
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+)
+
+const defaultServer = "http:
+
+type Mail struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Sender   string `json:"sender,omitempty"`
+}
+
+const DefaultSender = "mts-link.ru"
+
+func (m Mail) SenderFilter() string {
+	if s := strings.TrimSpace(m.Sender); s != "" {
+		return s
+	}
+	return DefaultSender
+}
+
+func (m Mail) Valid() bool { return m.Host != "" && m.User != "" && m.Password != "" }
+
+type Data struct {
+	ServerURL         string            `json:"server_url"`
+	Mode              string            `json:"mode"`
+	AccessToken       string            `json:"access_token"`
+	Login             string            `json:"login"`
+	Nickname          string            `json:"nickname"`
+	Group             string            `json:"group"`
+	LastURL           string            `json:"last_url"`
+	MailMonitoring    bool              `json:"mail_monitoring"`
+	EcoMode           *bool             `json:"eco_mode,omitempty"`
+	MinimizeToTray    *bool             `json:"minimize_to_tray,omitempty"`
+	TransparentWindow *bool             `json:"transparent_window,omitempty"`
+	Volume            *int              `json:"volume,omitempty"`
+	BossKey           string            `json:"boss_key"`
+	OnboardingDone    bool              `json:"onboarding_done"`
+	Mail              Mail              `json:"mail"`
+	MailLastUID       uint32            `json:"mail_last_uid"`
+	Links             []json.RawMessage `json:"links"`
+}
+
+
+type Config struct {
+	mu       sync.RWMutex
+	d        Data
+	path     string
+	dataDir  string
+	onChange func(key string)
+}
+
+var (
+	once     sync.Once
+	instance *Config
+)
+
+
+func Get() *Config {
+	once.Do(func() {
+		instance = &Config{}
+		instance.init()
+	})
+	return instance
+}
+
+func (c *Config) init() {
+
+	base := os.Getenv("LOCALAPPDATA")
+	if base == "" {
+		var err error
+		if base, err = os.UserConfigDir(); err != nil || base == "" {
+			base, _ = os.UserHomeDir()
+		}
+	}
+	c.dataDir = filepath.Join(base, "Autolectures")
+	_ = os.MkdirAll(c.dataDir, 0o755)
+	c.path = filepath.Join(c.dataDir, "config.json")
+	c.load()
+}
+
+func (c *Config) load() {
+	c.d = Data{ServerURL: defaultServer, Mode: "guest", BossKey: "Ctrl+Shift+H", Mail: Mail{Host: "imap.mail.ru", Port: 993}}
+	raw, err := os.ReadFile(c.path)
+	if err != nil {
+		return
+	}
+	var d Data
+	if json.Unmarshal(raw, &d) != nil {
+		return
+	}
+	if d.ServerURL == "" {
+		d.ServerURL = defaultServer
+	}
+	if d.Mode == "" {
+		d.Mode = "guest"
+	}
+	if d.BossKey == "" {
+		d.BossKey = "Ctrl+Shift+H"
+	}
+	if d.Mail.Port == 0 {
+		d.Mail.Port = 993
+	}
+	c.d = d
+}
+
+func (c *Config) save() {
+	raw, err := json.MarshalIndent(c.d, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := c.path + ".tmp"
+	if os.WriteFile(tmp, raw, 0o600) == nil {
+		_ = os.Rename(tmp, c.path)
+	}
+}
+
+
+func (c *Config) OnChange(fn func(key string)) { c.onChange = fn }
+
+func (c *Config) set(key string, mutate func(d *Data)) {
+	c.mu.Lock()
+	mutate(&c.d)
+	c.save()
+	fn := c.onChange
+	c.mu.Unlock()
+	if fn != nil {
+		fn(key)
+	}
+}
+
+func (c *Config) read(fn func(d *Data)) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fn(&c.d)
+}
+
+
+func (c *Config) DataDir() string { return c.dataDir }
+
+
+func (c *Config) Path() string { return c.path }
+
+func (c *Config) ServerURL() string {
+	var v string
+	c.read(func(d *Data) { v = d.ServerURL })
+	return v
+}
+func (c *Config) SetServerURL(v string) {
+	c.set("server_url", func(d *Data) { d.ServerURL = strings.TrimSpace(v) })
+}
+
+
+func (c *Config) WsURL() (string, error) {
+	u, err := url.Parse(c.ServerURL())
+	if err != nil || u.Host == "" {
+		return "", errors.New("некорректный адрес сервера")
+	}
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	u.Path = "/ws/node"
+	u.RawQuery = ""
+	return u.String(), nil
+}
+
+func (c *Config) IsGuest() bool {
+	var v bool
+	c.read(func(d *Data) { v = d.Mode != "account" })
+	return v
+}
+func (c *Config) SetGuest(g bool) {
+	c.set("mode", func(d *Data) {
+		if g {
+			d.Mode = "guest"
+		} else {
+			d.Mode = "account"
+		}
+	})
+}
+func (c *Config) AccessToken() string {
+	var v string
+	c.read(func(d *Data) { v = d.AccessToken })
+	return v
+}
+func (c *Config) SetAccessToken(v string) {
+	c.set("access_token", func(d *Data) { d.AccessToken = v })
+}
+func (c *Config) Login() string     { var v string; c.read(func(d *Data) { v = d.Login }); return v }
+func (c *Config) SetLogin(v string) { c.set("login", func(d *Data) { d.Login = v }) }
+
+func (c *Config) Nickname() string { var v string; c.read(func(d *Data) { v = d.Nickname }); return v }
+func (c *Config) SetNickname(v string) {
+	c.set("nickname", func(d *Data) { d.Nickname = strings.TrimSpace(v) })
+}
+func (c *Config) Group() string { var v string; c.read(func(d *Data) { v = d.Group }); return v }
+func (c *Config) SetGroup(v string) {
+	c.set("group", func(d *Data) { d.Group = strings.ToUpper(strings.TrimSpace(v)) })
+}
+func (c *Config) LastURL() string { var v string; c.read(func(d *Data) { v = d.LastURL }); return v }
+func (c *Config) SetLastURL(v string) {
+	c.set("last_url", func(d *Data) { d.LastURL = strings.TrimSpace(v) })
+}
+func (c *Config) MailMonitoring() bool {
+	var v bool
+	c.read(func(d *Data) { v = d.MailMonitoring })
+	return v
+}
+func (c *Config) SetMailMonitoring(v bool) {
+	c.set("mail_monitoring", func(d *Data) { d.MailMonitoring = v })
+}
+func (c *Config) EcoMode() bool     { return c.flag(func(d *Data) *bool { return d.EcoMode }, true) }
+func (c *Config) SetEcoMode(v bool) { c.set("eco_mode", func(d *Data) { d.EcoMode = &v }) }
+func (c *Config) MinimizeToTray() bool {
+	return c.flag(func(d *Data) *bool { return d.MinimizeToTray }, true)
+}
+func (c *Config) SetMinimizeToTray(v bool) {
+	c.set("minimize_to_tray", func(d *Data) { d.MinimizeToTray = &v })
+}
+func (c *Config) TransparentWindow() bool {
+	return c.flag(func(d *Data) *bool { return d.TransparentWindow }, true)
+}
+func (c *Config) SetTransparentWindow(v bool) {
+	c.set("transparent_window", func(d *Data) { d.TransparentWindow = &v })
+}
+func (c *Config) Volume() int {
+	var v = 100
+	c.read(func(d *Data) {
+		if d.Volume != nil {
+			v = *d.Volume
+		}
+	})
+	return v
+}
+func (c *Config) SetVolume(v int) {
+	if v < 0 {
+		v = 0
+	}
+	if v > 100 {
+		v = 100
+	}
+	c.set("volume", func(d *Data) { d.Volume = &v })
+}
+func (c *Config) BossKey() string     { var v string; c.read(func(d *Data) { v = d.BossKey }); return v }
+func (c *Config) SetBossKey(v string) { c.set("boss_key", func(d *Data) { d.BossKey = v }) }
+
+func (c *Config) flag(pick func(d *Data) *bool, def bool) bool {
+	v := def
+	c.read(func(d *Data) {
+		if p := pick(d); p != nil {
+			v = *p
+		}
+	})
+	return v
+}
+
+func (c *Config) OnboardingDone() bool {
+	var v bool
+	c.read(func(d *Data) { v = d.OnboardingDone })
+	return v
+}
+func (c *Config) SetOnboardingDone(v bool) {
+	c.set("onboarding_done", func(d *Data) { d.OnboardingDone = v })
+}
+
+func (c *Config) MailSettings() Mail {
+	var m Mail
+	c.read(func(d *Data) { m = d.Mail })
+	m.Password = deobfuscate(m.Password)
+	return m
+}
+func (c *Config) SetMailSettings(m Mail) {
+	m.Password = obfuscate(m.Password)
+	c.set("mail", func(d *Data) { d.Mail = m })
+}
+func (c *Config) MailLastUID() uint32 {
+	var v uint32
+	c.read(func(d *Data) { v = d.MailLastUID })
+	return v
+}
+func (c *Config) SetMailLastUID(v uint32) {
+	c.set("mail_last_uid", func(d *Data) { d.MailLastUID = v })
+}
+
+func (c *Config) Links() []json.RawMessage {
+	var v []json.RawMessage
+	c.read(func(d *Data) { v = append([]json.RawMessage(nil), d.Links...) })
+	return v
+}
+func (c *Config) SetLinks(v []json.RawMessage) { c.set("links", func(d *Data) { d.Links = v }) }
+
+
+func (c *Config) Syncable() map[string]any {
+	return map[string]any{
+		"nickname":           c.Nickname(),
+		"group":              c.Group(),
+		"mail_monitoring":    c.MailMonitoring(),
+		"eco_mode":           c.EcoMode(),
+		"minimize_to_tray":   c.MinimizeToTray(),
+		"volume":             c.Volume(),
+		"boss_key":           c.BossKey(),
+		"transparent_window": c.TransparentWindow(),
+	}
+}
+
+
+func (c *Config) ApplySynced(s map[string]any) {
+	if v, ok := s["nickname"].(string); ok {
+		c.SetNickname(v)
+	}
+	if v, ok := s["group"].(string); ok {
+		c.SetGroup(v)
+	}
+	if v, ok := s["mail_monitoring"].(bool); ok {
+		c.SetMailMonitoring(v)
+	}
+	if v, ok := s["eco_mode"].(bool); ok {
+		c.SetEcoMode(v)
+	}
+	if v, ok := s["minimize_to_tray"].(bool); ok {
+		c.SetMinimizeToTray(v)
+	}
+	if v, ok := s["transparent_window"].(bool); ok {
+		c.SetTransparentWindow(v)
+	}
+	if v, ok := s["volume"].(float64); ok {
+		c.SetVolume(int(v))
+	}
+	if v, ok := s["boss_key"].(string); ok && v != "" {
+		c.SetBossKey(v)
+	}
+}
+
+
+const obfKey = "autolectures-local-key"
+
+func obfuscate(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	b := []byte(plain)
+	for i := range b {
+		b[i] ^= obfKey[i%len(obfKey)]
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func deobfuscate(stored string) string {
+	if stored == "" {
+		return ""
+	}
+	b, err := base64.StdEncoding.DecodeString(stored)
+	if err != nil {
+		return ""
+	}
+	for i := range b {
+		b[i] ^= obfKey[i%len(obfKey)]
+	}
+	return string(b)
+}
+

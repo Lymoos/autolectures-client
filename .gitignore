@@ -1,0 +1,8 @@
+dist/
+build/
+*.exe
+*.zip
+*.sha256
+.vs/
+.idea/
+.vscode/

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Автолекции</title>
+<style>/*CSS*/</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== Панель заголовка ===== -->
+  <header id="titlebar">
+    <div class="tb-left" id="drag-zone">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" opacity=".25"/><path d="M8 7.5v9l8-4.5z"/></svg>
+      </span>
+      <span class="app-name">Автолекции</span>
+      <span class="conn" id="conn" title="Состояние соединения с сервером">● офлайн</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="0" title="Трансляция и управление сессией">Главная</button>
+      <button class="tab" data-tab="1" title="Расписание, статусы отметок и статистика">Расписание</button>
+      <button class="tab" data-tab="2" title="Журнал событий приложения">Журнал</button>
+    </nav>
+    <!-- Пилюля сессии живёт в панели заголовка: над областью превью лежит
+         нативное окно трансляции, и любой элемент страницы там был бы не виден. -->
+    <div class="pill glass hidden" id="pill">
+      <span id="pill-state">Ожидание</span>
+      <span class="mono" id="pill-timer">00:00:00</span>
+      <!-- Итог отметки по QR: зелёный — отметились, жёлтый — осечка,
+           красный — не авторизованы в ЕСКО. -->
+      <span class="attend hidden" id="pill-attend" title="Результат последней попытки отметки по QR-коду"></span>
+      <span class="eco hidden" id="pill-eco" title="Эко-режим: рендеринг кадров приостановлен">ЭКО</span>
+    </div>
+    <div class="tb-spacer" id="drag-zone2"></div>
+    <div class="tb-right">
+      <button class="btn primary sm hidden" id="btn-update" title="Доступна новая версия. Нажмите для тихой установки и перезапуска.">Обновить</button>
+      <div class="volume-wrap">
+        <div class="volume-pop hidden" id="volume-pop">
+          <button class="icon-btn" id="btn-mute" title="Выключить/включить звук"><span class="ico ico-volume"></span></button>
+          <input type="range" id="volume" min="0" max="100" value="100" title="Громкость трансляции">
+          <span class="volume-val" id="volume-val">100</span>
+        </div>
+        <button class="icon-btn" id="btn-volume" title="Громкость трансляции"><span class="ico ico-volume"></span></button>
+      </div>
+      <button class="btn ghost sm" id="btn-account" title="Аккаунт и параметры"><span class="ico ico-user"></span><span id="account-label">Гость</span><span class="dot" id="account-dot"></span></button>
+      <button class="icon-btn" id="btn-min" title="Свернуть"><span class="ico ico-minimize"></span></button>
+      <button class="icon-btn" id="btn-tray" title="Скрыть в трей (Boss Key)"><span class="ico ico-tray"></span></button>
+      <button class="icon-btn danger" id="btn-close" title="Закрыть"><span class="ico ico-close"></span></button>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ===== Главная: боковая панель 25% + Live Previewer 75% ===== -->
+    <section class="page" id="page-0">
+      <aside class="glass sidebar" id="sidebar">
+        <div class="caption">Ссылка на трансляцию</div>
+        <div class="field">
+          <input type="text" id="url" placeholder="https://my.mts-link.ru/…" title="Ссылка на комнату MTS-Link. Можно оставить пустым — ссылки придут из почты или Telegram." spellcheck="false">
+          <button class="clear" id="url-clear" title="Очистить">×</button>
+        </div>
+
+        <div class="caption mt">Авторизация</div>
+        <div class="auth" id="auth-block">
+          <button class="btn ghost auth-btn" id="btn-telegram" title="Привязать Telegram-бота: команды и уведомления"><span class="ico ico-telegram"></span><span id="telegram-label">Telegram</span><span class="dot" id="dot-telegram"></span></button>
+          <button class="btn ghost auth-btn" id="btn-esco" title="Войти в единую систему МИРЭА для автоматической отметки"><span class="ico ico-esco"></span><span id="esco-label">МИРЭА</span><span class="dot" id="dot-esco"></span></button>
+          <button class="btn ghost auth-btn" id="btn-mail" title="Подключить почту для автоматического разбора приглашений MTS-Link"><span class="ico ico-mail"></span><span>Почта</span><span class="dot" id="dot-mail"></span></button>
+        </div>
+
+        <div class="mail-row collapsed" id="mail-row">
+          <div class="mail-row-inner">
+            <label class="toggle-line" title="Фоновая проверка писем от invitation@mts-link.ru каждую минуту">
+              <span class="switch"><input type="checkbox" id="mail-toggle"><span class="knob"></span></span>
+              <span>Автомониторинг почты</span>
+            </label>
+            <div class="dim" id="mail-status">Мониторинг выключен</div>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="lecture-line hidden" id="lecture-line"></div>
+        <div class="dim" id="mode-hint">Гостевой режим: данные хранятся только на этом ПК, Telegram недоступен</div>
+        <button class="btn primary big" id="btn-start" title="Запустить глобальную сессию: соединение с сервером, планировщик и мониторинг почты"><span class="ico ico-play"></span><span id="start-label">Старт</span></button>
+      </aside>
+
+      <div class="previewer" id="previewer">
+        <div class="glass placeholder" id="placeholder">
+          <div class="ph-title" id="ph-title">Нет активной трансляции</div>
+          <div class="ph-text" id="ph-text">Вставьте ссылку слева и нажмите «Старт», либо дождитесь ссылки из почты или Telegram</div>
+          <button class="btn primary hidden" id="btn-watch" title="Включить рендеринг видео. В эко-режиме кадры не рисуются, работают только звук и anti-AFK."><span class="ico ico-play"></span><span>Смотреть трансляцию</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Расписание ===== -->
+    <section class="page hidden" id="page-1">
+      <div class="stats">
+        <div class="glass stat" title="Занятия по официальному расписанию группы на текущей неделе"><div class="caption">Занятий на неделе</div><div class="stat-val" id="st-week">0</div></div>
+        <div class="glass stat" title="Лекции, в которые клиент входил"><div class="caption">Посещено</div><div class="stat-val" id="st-attended">0</div></div>
+        <div class="glass stat" title="Успешные отметки присутствия по QR-коду"><div class="caption">Отмечено</div><div class="stat-val" id="st-marked">0</div></div>
+        <div class="glass stat" title="Суммарное время внутри трансляций"><div class="caption">Время в лекциях</div><div class="stat-val" id="st-time">0 мин</div></div>
+      </div>
+      <div class="list-head">
+        <span class="h2">Ближайшие лекции</span>
+        <span class="muted" id="sch-group"></span>
+        <span class="spacer"></span>
+        <span class="dim" id="sch-status"></span>
+        <button class="btn subtle sm" id="btn-group" title="Указать учебную группу для загрузки расписания">Группа</button>
+        <button class="btn ghost sm" id="btn-refresh" title="Перезагрузить расписание с schedule-of.mirea.ru"><span class="ico ico-update"></span><span>Обновить</span></button>
+      </div>
+      <div class="list" id="sch-list"></div>
+    </section>
+
+    <!-- ===== Журнал ===== -->
+    <section class="page hidden" id="page-2">
+      <div class="list-head">
+        <span class="h2">Журнал событий</span>
+        <span class="dim" id="log-count"></span>
+        <span class="spacer"></span>
+        <div class="seg" id="log-filter">
+          <button class="tab" data-level="0" title="Показывать записи от уровня «Отладка» и выше">Отладка</button>
+          <button class="tab active" data-level="1" title="Показывать записи от уровня «Инфо» и выше">Инфо</button>
+          <button class="tab" data-level="2" title="Показывать записи от уровня «Предупреждения» и выше">Предупреждения</button>
+          <button class="tab" data-level="3" title="Показывать только ошибки">Ошибки</button>
+        </div>
+        <button class="btn ghost sm" id="btn-copy-log" title="Скопировать весь журнал в буфер обмена (Ctrl+Shift+C)">Копировать</button>
+        <button class="btn subtle sm" id="btn-clear-log">Очистить</button>
+      </div>
+      <div class="log" id="log"></div>
+    </section>
+  </main>
+
+  <!-- ===== Диалоги (стеклянный оверлей) ===== -->
+  <div class="overlay hidden" id="overlay">
+    <div class="glass card" id="card">
+      <!-- Аккаунт -->
+      <div class="dlg hidden" id="dlg-account">
+        <div class="dlg-head">
+          <div class="seg"><button class="tab active" data-page="acc" title="Вход и регистрация">Аккаунт</button><button class="tab" data-page="set" title="Имя, группа, сервер, эко-режим">Параметры</button></div>
+          <span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button>
+        </div>
+        <div id="acc-page">
+          <div class="muted" id="acc-status"></div>
+          <div id="acc-form">
+            <input type="text" id="acc-login" placeholder="Логин" autocomplete="username">
+            <input type="password" id="acc-pass" placeholder="Пароль" autocomplete="current-password">
+            <input type="password" id="acc-pass2" placeholder="Повторите пароль" class="hidden">
+            <div class="err hidden" id="acc-err"></div>
+            <button class="btn primary big" id="btn-signin">Войти</button>
+            <button class="btn primary big hidden" id="btn-signup">Создать аккаунт</button>
+            <button class="btn subtle" id="btn-switch">Нет аккаунта? Зарегистрироваться</button>
+            <div class="dim center">или</div>
+            <button class="btn ghost" id="btn-guest" title="Локальный режим без сервера: без синхронизации и Telegram">Продолжить как гость</button>
+          </div>
+          <button class="btn danger hidden" id="btn-signout">Выйти из аккаунта</button>
+        </div>
+        <div id="set-page" class="hidden">
+          <div class="form">
+            <label>Имя на трансляции<input type="text" id="set-nick" placeholder="Иван Иванов" title="Имя, которое вводится при гостевом входе на трансляцию MTS-Link"></label>
+            <label>Группа<input type="text" id="set-group" placeholder="ИКБО-01-23" title="Учебная группа для загрузки официального расписания МИРЭА"></label>
+            <label>Сервер<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера синхронизации (REST + WebSocket)"></label>
+            <label>Boss Key<input type="text" id="set-boss" placeholder="Ctrl+Shift+H" title="Глобальная комбинация для мгновенного скрытия/показа окна"></label>
+            <label class="toggle-line" title="Ограничивать частоту кадров трансляции до входа в лекцию и при сворачивании"><span class="switch"><input type="checkbox" id="set-eco"><span class="knob"></span></span><span>Эко-режим (лимит FPS)</span></label>
+            <label class="toggle-line" title="При закрытии окна продолжать работу в фоне"><span class="switch"><input type="checkbox" id="set-tray"><span class="knob"></span></span><span>Сворачивать в трей</span></label>
+            <div class="dim">Параметры сохраняются при закрытии окна. Пароль почты и токены не синхронизируются.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Почта -->
+      <div class="dlg hidden" id="dlg-mail">
+        <div class="dlg-head"><span class="title">Почта</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
+        <div class="muted">Клиент читает письма по IMAP и добавляет ссылки на лекции в расписание. По умолчанию разбираются письма со всего домена <b>mts-link.ru</b> — приглашения и напоминания; для проверки можно указать любой другой адрес. Для Mail.ru, Яндекса и Gmail нужен <b>пароль приложения</b>, а не основной пароль.</div>
+        <div class="form">
+          <label>Сервер IMAP<input type="text" id="mail-host" placeholder="imap.mail.ru / imap.yandex.ru / imap.gmail.com"></label>
+          <label>Порт (SSL)<input type="number" id="mail-port" value="993" min="1" max="65535"></label>
+          <label>Логин<input type="text" id="mail-user" placeholder="student@mail.ru"></label>
+          <label>Пароль<input type="password" id="mail-pass" placeholder="Пароль приложения"></label>
+          <label title="Чьи письма разбирать: домен целиком или конкретный адрес. Для проверки можно указать свою почту и отправить письмо самому себе.">Разбирать письма от<input type="text" id="mail-sender" placeholder="mts-link.ru"></label>
+        </div>
+        <div class="msg hidden" id="mail-msg"></div>
+        <div class="dlg-actions">
+          <button class="btn subtle" id="btn-mail-disconnect" title="Удалить данные почты с этого ПК">Отключить</button>
+          <span class="spacer"></span>
+          <button class="btn primary" id="btn-mail-connect">Проверить и подключить</button>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div class="dlg hidden" id="dlg-telegram">
+        <div class="dlg-head"><span class="title">Telegram</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
+        <div class="muted">Бот принимает ссылки на лекции, управляет сессией и получает все уведомления: старт лекции, подтверждение присутствия, отметка, новые письма.</div>
+        <div class="center" id="tg-status"></div>
+        <div class="dlg-actions">
+          <span class="spacer"></span>
+          <!-- Показывается только если бот не открылся сам (например, ссылку
+               заблокировал антивирус) — обычная кнопка запускает всё заново. -->
+          <button class="btn primary hidden" id="btn-tg-open"><span class="ico ico-telegram"></span><span>Открыть Telegram</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Онбординг ===== -->
+  <div class="onboard hidden" id="onboard">
+    <div class="ob-hole" id="ob-hole"></div>
+    <div class="glass ob-tip" id="ob-tip">
+      <div class="h2" id="ob-title"></div>
+      <div class="muted" id="ob-text"></div>
+      <div class="ob-actions">
+        <span class="dim" id="ob-counter"></span>
+        <span class="spacer"></span>
+        <button class="btn subtle sm" id="ob-skip">Пропустить</button>
+        <button class="btn ghost sm" id="ob-back">Назад</button>
+        <button class="btn primary sm" id="ob-next">Далее</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>/*JS*/</script>
+</body>
+</html>
