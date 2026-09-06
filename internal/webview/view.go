@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package webview
 
@@ -26,23 +26,19 @@ type View struct {
 	visible  bool
 
 	OnMessage func(text string)
-
 	OnNavigated func(ok bool, status uint32)
 }
-
 
 const (
 	ErrConnectionAborted = 9
 	ErrOperationCanceled = 14
 )
 
-
 func ChromiumFlags(flags string) {
 	if os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") == "" {
 		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", flags)
 	}
 }
-
 
 func New(host *win.Window, o Options) (*View, error) {
 	v := &View{HWnd: host.CreateChild(), visible: true}
@@ -81,12 +77,10 @@ func New(host *win.Window, o Options) (*View, error) {
 			_ = c2.PutDefaultBackgroundColor(edge.COREWEBVIEW2_COLOR{A: 0, R: 0, G: 0, B: 0})
 		}
 	}
-
 	_ = c.GetController().PutIsVisible(true)
 	c.Resize()
 	return v, nil
 }
-
 
 func (v *View) SetBounds(x, y, w, h int32, visible bool) {
 	win.PlaceChild(v.HWnd, x, y, w, h, visible)
@@ -95,7 +89,6 @@ func (v *View) SetBounds(x, y, w, h int32, visible bool) {
 	}
 	v.SetVisible(visible)
 }
-
 
 func (v *View) SetVisible(visible bool) {
 	v.visible = visible
@@ -107,9 +100,7 @@ func (v *View) SetVisible(visible bool) {
 	}
 }
 
-
 func (v *View) Visible() bool { return v.visible }
-
 
 func (v *View) Navigate(url string)      { v.Chromium.Navigate(url) }
 func (v *View) NavigateHTML(html string) { v.Chromium.NavigateToString(html) }
@@ -121,7 +112,6 @@ func (v *View) SetUserAgent(ua string) {
 		_ = s.PutUserAgent(ua)
 	}
 }
-
 
 func navigationResult(args *edge.ICoreWebView2NavigationCompletedEventArgs) (bool, uint32) {
 	if args == nil {
@@ -141,4 +131,3 @@ func navigationResult(args *edge.ICoreWebView2NavigationCompletedEventArgs) (boo
 	_, _, _ = syscall.SyscallN(vt.getWebErrorStatus, uintptr(unsafe.Pointer(args)), uintptr(unsafe.Pointer(&status)))
 	return success != 0, status
 }
-

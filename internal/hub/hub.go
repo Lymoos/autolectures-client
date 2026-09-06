@@ -1,4 +1,4 @@
-﻿package hub
+package hub
 
 import (
 	"context"
@@ -52,7 +52,6 @@ func (h *Hub) Start() {
 	h.mu.Unlock()
 	go h.run(ctx)
 }
-
 
 func (h *Hub) Stop() {
 	h.mu.Lock()
@@ -108,7 +107,6 @@ func (h *Hub) run(ctx context.Context) {
 		}
 	}
 }
-
 
 func (h *Hub) session(ctx context.Context, url string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -195,7 +193,6 @@ func writeJSON(ctx context.Context, conn *websocket.Conn, v any) error {
 	return conn.Write(wctx, websocket.MessageText, raw)
 }
 
-
 func (h *Hub) Send(payload map[string]any) bool {
 	h.mu.Lock()
 	conn, ok := h.conn, h.authed
@@ -233,4 +230,3 @@ func (h *Hub) SendNotify(event, text string, data map[string]any) {
 func (h *Hub) SendLinkUpsert(link map[string]any) {
 	h.Send(map[string]any{"type": proto.C2SLinkUpsert, "link": link})
 }
-

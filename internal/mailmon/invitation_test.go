@@ -1,4 +1,4 @@
-﻿package mailmon
+package mailmon
 
 import (
 	"encoding/base64"
@@ -10,15 +10,15 @@ import (
 
 const reminderHTML = `<html><body>
 <h1>Напоминаем, что вы приглашены на вебинар</h1>
-<img src="https:
+<img src="https://cdn.mts-link.ru/banner.png" alt="">
 <h2>Лекция №1</h2>
 <p><span style="color:#8e44ad">2 сентября</span> 16:10 (UTC +03)</p>
 <table><tr><td align="center">
-  <a href="https:
+  <a href="https://my.mts-link.ru/j/92450771/246145852?t=1&amp;utm_source=reminder"
      style="background:#7f00ff;color:#fff">ПЕРЕЙТИ К ВЕБИНАРУ</a>
 </td></tr></table>
 <p>Максим Игоревич Шестаков,<br>напоминаем, что Вы зарегистрированы на вебинар.</p>
-<p><a href="https:
+<p><a href="https://my.mts-link.ru/unsubscribe/abc123">Отписаться от рассылки</a></p>
 </body></html>`
 
 func buildMessage(from, subject, html string) []byte {
@@ -41,7 +41,6 @@ func buildMessage(from, subject, html string) []byte {
 	return []byte(b.String())
 }
 
-
 func TestReminderFromEduMirea(t *testing.T) {
 	raw := buildMessage("noreply@mts-link.ru", "Напоминаем о вебинаре: Лекция №1", reminderHTML)
 	parsed := ParseMessage(raw)
@@ -52,7 +51,7 @@ func TestReminderFromEduMirea(t *testing.T) {
 	if !inv.Valid() {
 		t.Fatalf("ссылка на вебинар не найдена")
 	}
-	const want = "https:
+	const want = "https://my.mts-link.ru/j/92450771/246145852?t=1&utm_source=reminder"
 	if inv.URL != want {
 		t.Errorf("ссылка: получено %q, ожидалось %q", inv.URL, want)
 	}
@@ -65,11 +64,10 @@ func TestReminderFromEduMirea(t *testing.T) {
 	t.Logf("ссылка=%s время=%s название=%q", inv.URL, inv.When.Format("02.01.2006 15:04"), inv.Title)
 }
 
-
 func TestClassicInvitation(t *testing.T) {
 	html := `<html><body><p>Вы приглашены на мероприятие «Лекция по физике»</p>
 	<p>Дата: 15.09.2025 в 10:40 (UTC +03)</p>
-	<a href="https:
+	<a href="https://my.mts-link.ru/j/11111111/222222">Присоединиться</a></body></html>`
 	parsed := ParseMessage(buildMessage("invitation@mts-link.ru", "Приглашение на мероприятие: Лекция по физике", html))
 	inv := ExtractInvitation(parsed)
 	if !inv.Valid() {
@@ -81,12 +79,10 @@ func TestClassicInvitation(t *testing.T) {
 	t.Logf("ссылка=%s время=%s название=%q", inv.URL, inv.When.Format("02.01.2006 15:04"), inv.Title)
 }
 
-
 func TestUnsubscribeIgnored(t *testing.T) {
-	html := `<html><body><a href="https:
+	html := `<html><body><a href="https://my.mts-link.ru/unsubscribe/xyz">Отписаться</a></body></html>`
 	inv := ExtractInvitation(ParseMessage(buildMessage("noreply@mts-link.ru", "Рассылка", html)))
 	if inv.Valid() {
 		t.Errorf("принята ссылка отписки: %s", inv.URL)
 	}
 }
-

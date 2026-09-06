@@ -1,5 +1,3 @@
-﻿//go:build windows
-
 package main
 
 import (
@@ -12,11 +10,16 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/update"
 )
 
-var Version = "1.0.0"
+var Version = "1.0.1"
 
-//go:embed web/index.html web/app.css web/app.js
 var webFS embed.FS
 
+var scriptsFS embed.FS
+
+func read(fs embed.FS, name string) string {
+	b, err := fs.ReadFile(name)
+	if err != nil {
+		return "/* " + name + " не найден */"
 	}
 	return string(b)
 }
@@ -70,4 +73,3 @@ func contains(list []string, v string) bool {
 	}
 	return false
 }
-

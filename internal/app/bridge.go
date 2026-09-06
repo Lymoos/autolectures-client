@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package app
 
@@ -124,4 +124,3 @@ func (b *Bridge) onMessage(text string) {
 	call.done = true
 	b.reply(msg.ID, result, err)
 }
-

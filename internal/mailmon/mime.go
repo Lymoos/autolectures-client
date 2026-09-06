@@ -1,4 +1,4 @@
-﻿package mailmon
+package mailmon
 
 import (
 	"io"
@@ -26,15 +26,12 @@ type Invitation struct {
 	Title string
 }
 
-
 func (i Invitation) Valid() bool { return i.URL != "" }
-
 
 func ParseMessage(raw []byte) Parsed {
 	var p Parsed
 	mr, err := mail.CreateReader(strings.NewReader(string(raw)))
 	if err != nil {
-
 		if entity, e2 := message.Read(strings.NewReader(string(raw))); e2 == nil {
 			body, _ := io.ReadAll(entity.Body)
 			p.Text = string(body)
@@ -70,10 +67,11 @@ func ParseMessage(raw []byte) Parsed {
 var (
 	styleRe   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 	scriptRe  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	breakRe   = regexp.MustCompile(`(?i)<br\s*/?>|</p>|</div>|</tr>|</li>|</h[1-6]>`)
 	tagRe     = regexp.MustCompile(`<[^>]+>`)
 	spacesRe  = regexp.MustCompile(`[ \t]+`)
-	hrefRe    = regexp.MustCompile(`(?i)href\s*=\s*["']?(https?:
-	urlRe     = regexp.MustCompile(`(?i)(https?:
+	hrefRe    = regexp.MustCompile(`(?i)href\s*=\s*["']?(https?://[^\s"'<>]*mts-link\.ru/[^\s"'<>]+)`)
+	urlRe     = regexp.MustCompile(`(?i)(https?://[\w.-]*mts-link\.ru/[^\s"'<>)\]]+)`)
 	ruDateRe  = regexp.MustCompile(`(\d{1,2})\s+([А-Яа-яЁё]+)(?:\s+(\d{4}))?[^\d\n]{0,25}?(\d{1,2}):(\d{2})`)
 	dotDateRe = regexp.MustCompile(`(\d{1,2})\.(\d{2})\.(\d{4})[^\d\n]{0,15}?(\d{1,2}):(\d{2})`)
 	isoDateRe = regexp.MustCompile(`(\d{4})-(\d{2})-(\d{2})[T\s](\d{1,2}):(\d{2})`)
@@ -92,7 +90,6 @@ func monthFromRussian(word string) int {
 	return 0
 }
 
-
 func HTMLToText(html string) string {
 	t := styleRe.ReplaceAllString(html, "")
 	t = scriptRe.ReplaceAllString(t, "")
@@ -102,7 +99,6 @@ func HTMLToText(html string) string {
 	t = r.Replace(t)
 	return spacesRe.ReplaceAllString(t, " ")
 }
-
 
 func ExtractInvitation(m Parsed) Invitation {
 	inv := Invitation{Title: m.Subject}
@@ -146,7 +142,6 @@ func ExtractInvitation(m Parsed) Invitation {
 		hour, _ := strconv.Atoi(sub[4])
 		minute, _ := strconv.Atoi(sub[5])
 		if t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, time.Local); t.Day() == day {
-
 			if sub[3] == "" && t.Before(time.Now().AddDate(0, 0, -30)) {
 				t = t.AddDate(1, 0, 0)
 			}
@@ -182,4 +177,3 @@ func ExtractInvitation(m Parsed) Invitation {
 	}
 	return inv
 }
-

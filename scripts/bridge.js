@@ -1,23 +1,32 @@
-﻿(function () {
+// bridge.js — мост между страницей трансляции и приложением (WebView2).
+(function () {
+  // мост в каждом фрейме: виджет входа бывает в iframe
   if (window.__AL) return;
   var isTop = window.top === window;
+
   var AL = window.__AL = {
     state: { nickname: '', scanEnabled: false, antiAfkEnabled: true, volume: 100 },
     _ready: [],
     _listeners: [],
+
     onReady: function (cb) { AL._ready.push(cb); },
     onState: function (cb) { AL._listeners.push(cb); },
+
     setState: function (s) {
       for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) AL.state[k] = s[k];
-      AL._listeners.forEach(function (cb) { try { cb(AL.state); } catch (e) {  } });
+      AL._listeners.forEach(function (cb) { try { cb(AL.state); } catch (e) { /* игнорируем */ } });
     },
+
     post: function (msg) {
-      try { window.chrome.webview.postMessage(JSON.stringify(msg)); } catch (e) {  }
+      try { window.chrome.webview.postMessage(JSON.stringify(msg)); } catch (e) { /* нет моста */ }
     },
+
     log: function (level, msg) { AL.post({ type: 'log', level: level, message: String(msg) }); },
+
     text: function (el) {
       return ((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim();
     },
+
     isVisible: function (el) {
       if (!el || !el.getBoundingClientRect) return false;
       var r = el.getBoundingClientRect();
@@ -25,10 +34,13 @@
       var st = window.getComputedStyle(el);
       return st.visibility !== 'hidden' && st.display !== 'none' && st.opacity !== '0';
     },
+
     first: function (list) {
       for (var i = 0; i < list.length; i++) if (AL.isVisible(list[i])) return list[i];
       return null;
     },
+
+    // Установка значения в контролируемый (React/Vue) input
     setInputValue: function (input, value) {
       try {
         var proto = Object.getPrototypeOf(input);
@@ -39,6 +51,8 @@
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     },
+
+    // Обход открытых shadow-root: части интерфейса живут в веб-компонентах.
     deepQuery: function (selector) {
       var out = [];
       (function walk(root) {
@@ -48,23 +62,30 @@
       })(document);
       return out;
     },
+
     label: function (el) {
       return AL.text(el) || el.value || el.getAttribute('aria-label') || '';
     },
+
+    // Видимости недостаточно: кнопка может оставаться заблокированной.
     isClickable: function (el) {
       if (!AL.isVisible(el)) return false;
       if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
       if (window.getComputedStyle(el).pointerEvents === 'none') return false;
       return true;
     },
+
+    // Часть обработчиков слушает указательные события, а не click().
     realClick: function (el) {
       var opts = { bubbles: true, cancelable: true, view: window };
       ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
         var Ctor = (type.indexOf('pointer') === 0 && window.PointerEvent) ? PointerEvent : MouseEvent;
-        try { el.dispatchEvent(new Ctor(type, opts)); } catch (e) {  }
+        try { el.dispatchEvent(new Ctor(type, opts)); } catch (e) { /* игнорируем */ }
       });
-      try { el.click(); } catch (e) {  }
+      try { el.click(); } catch (e) { /* игнорируем */ }
     },
+
+    // Первый кликабельный элемент с подходящим текстом.
     findButton: function (selectors, re, excludeRe, maxLen) {
       for (var s = 0; s < selectors.length; s++) {
         var nodes = AL.deepQuery(selectors[s]);
@@ -79,13 +100,15 @@
       return null;
     }
   };
+
   function start() {
     var cbs = AL._ready; AL._ready = [];
     cbs.forEach(function (cb) { try { cb(AL.state); } catch (e) { AL.log('error', 'Скрипт: ' + e); } });
     AL.onReady = function (cb) { try { cb(AL.state); } catch (e) { AL.log('error', 'Скрипт: ' + e); } };
     AL.post({ type: 'ready' });
     AL.log('debug', 'Мост установлен: ' + location.host + (isTop ? '' : ' (iframe)'));
-    if (!isTop) return;   
+    if (!isTop) return;   // заголовок вкладки берём только у главного документа
+    // Заголовок страницы — название лекции
     var lastTitle = '';
     setInterval(function () {
       if (document.title && document.title !== lastTitle) {

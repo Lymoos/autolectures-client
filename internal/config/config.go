@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"encoding/base64"
@@ -11,14 +11,14 @@ import (
 	"sync"
 )
 
-const defaultServer = "http:
+const defaultServer = "http://194.87.148.14:8000"
 
 type Mail struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
 	Password string `json:"password"`
-	Sender   string `json:"sender,omitempty"`
+	Sender string `json:"sender,omitempty"`
 }
 
 const DefaultSender = "mts-link.ru"
@@ -52,7 +52,6 @@ type Data struct {
 	Links             []json.RawMessage `json:"links"`
 }
 
-
 type Config struct {
 	mu       sync.RWMutex
 	d        Data
@@ -66,7 +65,6 @@ var (
 	instance *Config
 )
 
-
 func Get() *Config {
 	once.Do(func() {
 		instance = &Config{}
@@ -76,7 +74,6 @@ func Get() *Config {
 }
 
 func (c *Config) init() {
-
 	base := os.Getenv("LOCALAPPDATA")
 	if base == "" {
 		var err error
@@ -126,7 +123,6 @@ func (c *Config) save() {
 	}
 }
 
-
 func (c *Config) OnChange(fn func(key string)) { c.onChange = fn }
 
 func (c *Config) set(key string, mutate func(d *Data)) {
@@ -146,9 +142,7 @@ func (c *Config) read(fn func(d *Data)) {
 	fn(&c.d)
 }
 
-
 func (c *Config) DataDir() string { return c.dataDir }
-
 
 func (c *Config) Path() string { return c.path }
 
@@ -160,7 +154,6 @@ func (c *Config) ServerURL() string {
 func (c *Config) SetServerURL(v string) {
 	c.set("server_url", func(d *Data) { d.ServerURL = strings.TrimSpace(v) })
 }
-
 
 func (c *Config) WsURL() (string, error) {
 	u, err := url.Parse(c.ServerURL())
@@ -302,7 +295,6 @@ func (c *Config) Links() []json.RawMessage {
 }
 func (c *Config) SetLinks(v []json.RawMessage) { c.set("links", func(d *Data) { d.Links = v }) }
 
-
 func (c *Config) Syncable() map[string]any {
 	return map[string]any{
 		"nickname":           c.Nickname(),
@@ -315,7 +307,6 @@ func (c *Config) Syncable() map[string]any {
 		"transparent_window": c.TransparentWindow(),
 	}
 }
-
 
 func (c *Config) ApplySynced(s map[string]any) {
 	if v, ok := s["nickname"].(string); ok {
@@ -344,7 +335,6 @@ func (c *Config) ApplySynced(s map[string]any) {
 	}
 }
 
-
 const obfKey = "autolectures-local-key"
 
 func obfuscate(plain string) string {
@@ -371,4 +361,3 @@ func deobfuscate(stored string) string {
 	}
 	return string(b)
 }
-

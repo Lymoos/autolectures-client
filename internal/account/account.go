@@ -1,4 +1,4 @@
-﻿package account
+package account
 
 import (
 	"encoding/json"
@@ -26,7 +26,6 @@ type Manager struct {
 	OnSyncError   func(err string)
 }
 
-
 func New(a *api.Client) *Manager { return &Manager{api: a} }
 
 func (m *Manager) IsGuest() bool { return config.Get().IsGuest() }
@@ -51,7 +50,6 @@ func (m *Manager) applyAuth(body map[string]any, login string) {
 	m.PullAll()
 }
 
-
 func (m *Manager) SignIn(login, password string) error {
 	r := m.api.Post(proto.ApiAuthLogin, map[string]any{"login": login, "password": password})
 	if !r.OK {
@@ -61,7 +59,6 @@ func (m *Manager) SignIn(login, password string) error {
 	return nil
 }
 
-
 func (m *Manager) SignUp(login, password string) error {
 	r := m.api.Post(proto.ApiAuthRegister, map[string]any{"login": login, "password": password})
 	if !r.OK {
@@ -70,7 +67,6 @@ func (m *Manager) SignUp(login, password string) error {
 	m.applyAuth(r.Body, login)
 	return nil
 }
-
 
 func (m *Manager) SignOut() {
 	cfg := config.Get()
@@ -83,7 +79,6 @@ func (m *Manager) SignOut() {
 	}
 }
 
-
 func (m *Manager) ContinueAsGuest() {
 	if !m.IsGuest() {
 		m.SignOut()
@@ -91,7 +86,6 @@ func (m *Manager) ContinueAsGuest() {
 		m.OnChanged()
 	}
 }
-
 
 func (m *Manager) RestoreSession() {
 	if !m.Authorized() {
@@ -114,13 +108,11 @@ func (m *Manager) RestoreSession() {
 		logger.Warnf(src, "Сессия аккаунта истекла, требуется повторный вход")
 		m.SignOut()
 	default:
-
 		if m.OnChanged != nil {
 			m.OnChanged()
 		}
 	}
 }
-
 
 func (m *Manager) PullAll() {
 	if !m.Authorized() {
@@ -147,7 +139,6 @@ func (m *Manager) PullAll() {
 	}
 }
 
-
 func (m *Manager) PushSettings() {
 	if !m.Authorized() {
 		return
@@ -168,7 +159,6 @@ func (m *Manager) PushSettings() {
 	})
 }
 
-
 func (m *Manager) PushLinks(links []json.RawMessage) {
 	if !m.Authorized() {
 		return
@@ -186,7 +176,6 @@ func (m *Manager) PushLinks(links []json.RawMessage) {
 	}
 }
 
-
 func (m *Manager) TelegramCode() (code, deepLink string, err error) {
 	if !m.Authorized() {
 		return "", "", errors.New("привязка Telegram доступна только с аккаунтом")
@@ -200,7 +189,6 @@ func (m *Manager) TelegramCode() (code, deepLink string, err error) {
 	return code, deepLink, nil
 }
 
-
 func (m *Manager) TelegramStatus() (linked bool, username string) {
 	if !m.Authorized() {
 		return false, ""
@@ -213,4 +201,3 @@ func (m *Manager) TelegramStatus() (linked bool, username string) {
 	username, _ = r.Body["username"].(string)
 	return linked, username
 }
-

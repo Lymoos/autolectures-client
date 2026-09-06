@@ -1,4 +1,4 @@
-﻿(function webpackUniversalModuleDefinition(root, factory) {
+(function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
 		module.exports = factory();
 	else if(typeof define === 'function' && define.amd)
@@ -8,48 +8,79 @@
 	else
 		root["jsQR"] = factory();
 })(typeof self !== 'undefined' ? self : this, function() {
-return  (function(modules) { 
- 	var installedModules = {};
- 	function __webpack_require__(moduleId) {
- 		if(installedModules[moduleId]) {
- 			return installedModules[moduleId].exports;
- 		}
- 		var module = installedModules[moduleId] = {
- 			i: moduleId,
- 			l: false,
- 			exports: {}
- 		};
- 		modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
- 		module.l = true;
- 		return module.exports;
- 	}
- 	__webpack_require__.m = modules;
- 	__webpack_require__.c = installedModules;
- 	__webpack_require__.d = function(exports, name, getter) {
- 		if(!__webpack_require__.o(exports, name)) {
- 			Object.defineProperty(exports, name, {
- 				configurable: false,
- 				enumerable: true,
- 				get: getter
- 			});
- 		}
- 	};
- 	__webpack_require__.n = function(module) {
- 		var getter = module && module.__esModule ?
- 			function getDefault() { return module['default']; } :
- 			function getModuleExports() { return module; };
- 		__webpack_require__.d(getter, 'a', getter);
- 		return getter;
- 	};
- 	__webpack_require__.o = function(object, property) { return Object.prototype.hasOwnProperty.call(object, property); };
- 	__webpack_require__.p = "";
- 	return __webpack_require__(__webpack_require__.s = 3);
- })
- ([
- (function(module, exports, __webpack_require__) {
+return /******/ (function(modules) { // webpackBootstrap
+/******/ 	// The module cache
+/******/ 	var installedModules = {};
+/******/
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/
+/******/ 		// Check if module is in cache
+/******/ 		if(installedModules[moduleId]) {
+/******/ 			return installedModules[moduleId].exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = installedModules[moduleId] = {
+/******/ 			i: moduleId,
+/******/ 			l: false,
+/******/ 			exports: {}
+/******/ 		};
+/******/
+/******/ 		// Execute the module function
+/******/ 		modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/
+/******/ 		// Flag the module as loaded
+/******/ 		module.l = true;
+/******/
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/
+/******/
+/******/ 	// expose the modules object (__webpack_modules__)
+/******/ 	__webpack_require__.m = modules;
+/******/
+/******/ 	// expose the module cache
+/******/ 	__webpack_require__.c = installedModules;
+/******/
+/******/ 	// define getter function for harmony exports
+/******/ 	__webpack_require__.d = function(exports, name, getter) {
+/******/ 		if(!__webpack_require__.o(exports, name)) {
+/******/ 			Object.defineProperty(exports, name, {
+/******/ 				configurable: false,
+/******/ 				enumerable: true,
+/******/ 				get: getter
+/******/ 			});
+/******/ 		}
+/******/ 	};
+/******/
+/******/ 	// getDefaultExport function for compatibility with non-harmony modules
+/******/ 	__webpack_require__.n = function(module) {
+/******/ 		var getter = module && module.__esModule ?
+/******/ 			function getDefault() { return module['default']; } :
+/******/ 			function getModuleExports() { return module; };
+/******/ 		__webpack_require__.d(getter, 'a', getter);
+/******/ 		return getter;
+/******/ 	};
+/******/
+/******/ 	// Object.prototype.hasOwnProperty.call
+/******/ 	__webpack_require__.o = function(object, property) { return Object.prototype.hasOwnProperty.call(object, property); };
+/******/
+/******/ 	// __webpack_public_path__
+/******/ 	__webpack_require__.p = "";
+/******/
+/******/ 	// Load entry module and return exports
+/******/ 	return __webpack_require__(__webpack_require__.s = 3);
+/******/ })
+/************************************************************************/
+/******/ ([
+/* 0 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
-var BitMatrix =  (function () {
+var BitMatrix = /** @class */ (function () {
     function BitMatrix(data, width) {
         this.width = width;
         this.height = data.length / width;
@@ -77,16 +108,21 @@ var BitMatrix =  (function () {
     return BitMatrix;
 }());
 exports.BitMatrix = BitMatrix;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 1 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var GenericGFPoly_1 = __webpack_require__(2);
 function addOrSubtractGF(a, b) {
-    return a ^ b; 
+    return a ^ b; // tslint:disable-line:no-bitwise
 }
 exports.addOrSubtractGF = addOrSubtractGF;
-var GenericGF =  (function () {
+var GenericGF = /** @class */ (function () {
     function GenericGF(primitive, size, genBase) {
         this.primitive = primitive;
         this.size = size;
@@ -98,7 +134,7 @@ var GenericGF =  (function () {
             this.expTable[i] = x;
             x = x * 2;
             if (x >= this.size) {
-                x = (x ^ this.primitive) & (this.size - 1); 
+                x = (x ^ this.primitive) & (this.size - 1); // tslint:disable-line:no-bitwise
             }
         }
         for (var i = 0; i < this.size - 1; i++) {
@@ -142,12 +178,17 @@ var GenericGF =  (function () {
     return GenericGF;
 }());
 exports.default = GenericGF;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 2 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var GenericGF_1 = __webpack_require__(1);
-var GenericGFPoly =  (function () {
+var GenericGFPoly = /** @class */ (function () {
     function GenericGFPoly(field, coefficients) {
         if (coefficients.length === 0) {
             throw new Error("No coefficients.");
@@ -155,6 +196,7 @@ var GenericGFPoly =  (function () {
         this.field = field;
         var coefficientsLength = coefficients.length;
         if (coefficientsLength > 1 && coefficients[0] === 0) {
+            // Leading term must be non-zero for anything except the constant polynomial "0"
             var firstNonZero = 1;
             while (firstNonZero < coefficientsLength && coefficients[firstNonZero] === 0) {
                 firstNonZero++;
@@ -253,10 +295,12 @@ var GenericGFPoly =  (function () {
     GenericGFPoly.prototype.evaluateAt = function (a) {
         var result = 0;
         if (a === 0) {
+            // Just return the x^0 coefficient
             return this.getCoefficient(0);
         }
         var size = this.coefficients.length;
         if (a === 1) {
+            // Just the sum of the coefficients
             this.coefficients.forEach(function (coefficient) {
                 result = GenericGF_1.addOrSubtractGF(result, coefficient);
             });
@@ -271,9 +315,14 @@ var GenericGFPoly =  (function () {
     return GenericGFPoly;
 }());
 exports.default = GenericGFPoly;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 3 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var binarizer_1 = __webpack_require__(4);
 var decoder_1 = __webpack_require__(5);
@@ -329,9 +378,14 @@ function jsQR(data, width, height, providedOptions) {
 }
 jsQR.default = jsQR;
 exports.default = jsQR;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 4 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var BitMatrix_1 = __webpack_require__(0);
 var REGION_SIZE = 8;
@@ -339,7 +393,8 @@ var MIN_DYNAMIC_RANGE = 24;
 function numBetween(value, min, max) {
     return value < min ? min : value > max ? max : value;
 }
-var Matrix =  (function () {
+// Like BitMatrix but accepts arbitry Uint8 values
+var Matrix = /** @class */ (function () {
     function Matrix(width, height) {
         this.width = width;
         this.data = new Uint8ClampedArray(width * height);
@@ -356,6 +411,7 @@ function binarize(data, width, height, returnInverted) {
     if (data.length !== width * height * 4) {
         throw new Error("Malformed data passed to binarizer.");
     }
+    // Convert image to greyscale
     var greyscalePixels = new Matrix(width, height);
     for (var x = 0; x < width; x++) {
         for (var y = 0; y < height; y++) {
@@ -383,8 +439,19 @@ function binarize(data, width, height, returnInverted) {
             }
             var average = sum / (Math.pow(REGION_SIZE, 2));
             if (max - min <= MIN_DYNAMIC_RANGE) {
+                // If variation within the block is low, assume this is a block with only light or only
+                // dark pixels. In that case we do not want to use the average, as it would divide this
+                // low contrast area into black and white pixels, essentially creating data out of noise.
+                //
+                // Default the blackpoint for these blocks to be half the min - effectively white them out
                 average = min / 2;
                 if (verticalRegion > 0 && hortizontalRegion > 0) {
+                    // Correct the "white background" assumption for blocks that have neighbors by comparing
+                    // the pixels in this block to the previously calculated black points. This is based on
+                    // the fact that dark barcode symbology is always surrounded by some amount of light
+                    // background for which reasonable black point estimates were made. The bp estimated at
+                    // the boundaries is used for the interior.
+                    // The (min < bp) is arbitrary but works better than other heuristics that were tried.
                     var averageNeighborBlackPoint = (blackPoints.get(hortizontalRegion, verticalRegion - 1) +
                         (2 * blackPoints.get(hortizontalRegion - 1, verticalRegion)) +
                         blackPoints.get(hortizontalRegion - 1, verticalRegion - 1)) / 4;
@@ -431,14 +498,20 @@ function binarize(data, width, height, returnInverted) {
     return { binarized: binarized };
 }
 exports.binarize = binarize;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 5 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var BitMatrix_1 = __webpack_require__(0);
 var decodeData_1 = __webpack_require__(6);
 var reedsolomon_1 = __webpack_require__(9);
 var version_1 = __webpack_require__(10);
+// tslint:disable:no-bitwise
 function numBitsDiffering(x, y) {
     var z = x ^ y;
     var bitCount = 0;
@@ -451,6 +524,7 @@ function numBitsDiffering(x, y) {
 function pushBit(bit, byte) {
     return (byte << 1) | bit;
 }
+// tslint:enable:no-bitwise
 var FORMAT_INFO_TABLE = [
     { bits: 0x5412, formatInfo: { errorCorrectionLevel: 1, dataMask: 0 } },
     { bits: 0x5125, formatInfo: { errorCorrectionLevel: 1, dataMask: 1 } },
@@ -498,9 +572,10 @@ var DATA_MASKS = [
 function buildFunctionPatternMask(version) {
     var dimension = 17 + 4 * version.versionNumber;
     var matrix = BitMatrix_1.BitMatrix.createEmpty(dimension, dimension);
-    matrix.setRegion(0, 0, 9, 9, true); 
-    matrix.setRegion(dimension - 8, 0, 8, 9, true); 
-    matrix.setRegion(0, dimension - 8, 9, 8, true); 
+    matrix.setRegion(0, 0, 9, 9, true); // Top left finder pattern + separator + format
+    matrix.setRegion(dimension - 8, 0, 8, 9, true); // Top right finder pattern + separator + format
+    matrix.setRegion(0, dimension - 8, 9, 8, true); // Bottom left finder pattern + separator + format
+    // Alignment patterns
     for (var _i = 0, _a = version.alignmentPatternCenters; _i < _a.length; _i++) {
         var x = _a[_i];
         for (var _b = 0, _c = version.alignmentPatternCenters; _b < _c.length; _b++) {
@@ -510,11 +585,11 @@ function buildFunctionPatternMask(version) {
             }
         }
     }
-    matrix.setRegion(6, 9, 1, dimension - 17, true); 
-    matrix.setRegion(9, 6, dimension - 17, 1, true); 
+    matrix.setRegion(6, 9, 1, dimension - 17, true); // Vertical timing pattern
+    matrix.setRegion(9, 6, dimension - 17, 1, true); // Horizontal timing pattern
     if (version.versionNumber > 6) {
-        matrix.setRegion(dimension - 11, 0, 3, 6, true); 
-        matrix.setRegion(0, dimension - 11, 6, 3, true); 
+        matrix.setRegion(dimension - 11, 0, 3, 6, true); // Version info, top right
+        matrix.setRegion(0, dimension - 11, 6, 3, true); // Version info, bottom left
     }
     return matrix;
 }
@@ -525,9 +600,10 @@ function readCodewords(matrix, version, formatInfo) {
     var codewords = [];
     var currentByte = 0;
     var bitsRead = 0;
+    // Read columns in pairs, from right to left
     var readingUp = true;
     for (var columnIndex = dimension - 1; columnIndex > 0; columnIndex -= 2) {
-        if (columnIndex === 6) { 
+        if (columnIndex === 6) { // Skip whole column with vertical alignment pattern;
             columnIndex--;
         }
         for (var i = 0; i < dimension; i++) {
@@ -541,7 +617,7 @@ function readCodewords(matrix, version, formatInfo) {
                         bit = !bit;
                     }
                     currentByte = pushBit(bit, currentByte);
-                    if (bitsRead === 8) { 
+                    if (bitsRead === 8) { // Whole bytes
                         codewords.push(currentByte);
                         bitsRead = 0;
                         currentByte = 0;
@@ -556,7 +632,7 @@ function readCodewords(matrix, version, formatInfo) {
 function readVersion(matrix) {
     var dimension = matrix.height;
     var provisionalVersion = Math.floor((dimension - 17) / 4);
-    if (provisionalVersion <= 6) { 
+    if (provisionalVersion <= 6) { // 6 and under dont have version info in the QR code
         return version_1.VERSIONS[provisionalVersion - 1];
     }
     var topRightVersionBits = 0;
@@ -589,6 +665,8 @@ function readVersion(matrix) {
             bestDifference = difference;
         }
     }
+    // We can tolerate up to 3 bits of error since no two version info codewords will
+    // differ in less than 8 bits.
     if (bestDifference <= 3) {
         return bestVersion;
     }
@@ -596,21 +674,21 @@ function readVersion(matrix) {
 function readFormatInformation(matrix) {
     var topLeftFormatInfoBits = 0;
     for (var x = 0; x <= 8; x++) {
-        if (x !== 6) { 
+        if (x !== 6) { // Skip timing pattern bit
             topLeftFormatInfoBits = pushBit(matrix.get(x, 8), topLeftFormatInfoBits);
         }
     }
     for (var y = 7; y >= 0; y--) {
-        if (y !== 6) { 
+        if (y !== 6) { // Skip timing pattern bit
             topLeftFormatInfoBits = pushBit(matrix.get(8, y), topLeftFormatInfoBits);
         }
     }
     var dimension = matrix.height;
     var topRightBottomRightFormatInfoBits = 0;
-    for (var y = dimension - 1; y >= dimension - 7; y--) { 
+    for (var y = dimension - 1; y >= dimension - 7; y--) { // bottom left
         topRightBottomRightFormatInfoBits = pushBit(matrix.get(8, y), topRightBottomRightFormatInfoBits);
     }
-    for (var x = dimension - 8; x < dimension; x++) { 
+    for (var x = dimension - 8; x < dimension; x++) { // top right
         topRightBottomRightFormatInfoBits = pushBit(matrix.get(x, 8), topRightBottomRightFormatInfoBits);
     }
     var bestDifference = Infinity;
@@ -625,7 +703,7 @@ function readFormatInformation(matrix) {
             bestFormatInfo = formatInfo;
             bestDifference = difference;
         }
-        if (topLeftFormatInfoBits !== topRightBottomRightFormatInfoBits) { 
+        if (topLeftFormatInfoBits !== topRightBottomRightFormatInfoBits) { // also try the other option
             difference = numBitsDiffering(topRightBottomRightFormatInfoBits, bits);
             if (difference < bestDifference) {
                 bestFormatInfo = formatInfo;
@@ -633,6 +711,7 @@ function readFormatInformation(matrix) {
             }
         }
     }
+    // Hamming distance of the 32 masked codes is 7, by construction, so <= 3 bits differing means we found a match
     if (bestDifference <= 3) {
         return bestFormatInfo;
     }
@@ -648,17 +727,22 @@ function getDataBlocks(codewords, version, ecLevel) {
             totalCodewords += block.dataCodewordsPerBlock + ecInfo.ecCodewordsPerBlock;
         }
     });
+    // In some cases the QR code will be malformed enough that we pull off more or less than we should.
+    // If we pull off less there's nothing we can do.
+    // If we pull off more we can safely truncate
     if (codewords.length < totalCodewords) {
         return null;
     }
     codewords = codewords.slice(0, totalCodewords);
     var shortBlockSize = ecInfo.ecBlocks[0].dataCodewordsPerBlock;
+    // Pull codewords to fill the blocks up to the minimum size
     for (var i = 0; i < shortBlockSize; i++) {
         for (var _i = 0, dataBlocks_1 = dataBlocks; _i < dataBlocks_1.length; _i++) {
             var dataBlock = dataBlocks_1[_i];
             dataBlock.codewords.push(codewords.shift());
         }
     }
+    // If there are any large blocks, pull codewords to fill the last element of those
     if (ecInfo.ecBlocks.length > 1) {
         var smallBlockCount = ecInfo.ecBlocks[0].numBlocks;
         var largeBlockCount = ecInfo.ecBlocks[1].numBlocks;
@@ -666,6 +750,7 @@ function getDataBlocks(codewords, version, ecLevel) {
             dataBlocks[smallBlockCount + i].codewords.push(codewords.shift());
         }
     }
+    // Add the rest of the codewords to the blocks. These are the error correction codewords.
     while (codewords.length > 0) {
         for (var _a = 0, dataBlocks_2 = dataBlocks; _a < dataBlocks_2.length; _a++) {
             var dataBlock = dataBlocks_2[_a];
@@ -688,6 +773,7 @@ function decodeMatrix(matrix) {
     if (!dataBlocks) {
         return null;
     }
+    // Count total number of data bytes
     var totalBytes = dataBlocks.reduce(function (a, b) { return a + b.numDataCodewords; }, 0);
     var resultBytes = new Uint8ClampedArray(totalBytes);
     var resultIndex = 0;
@@ -716,6 +802,7 @@ function decode(matrix) {
     if (result) {
         return result;
     }
+    // Decoding didn't work, try mirroring the QR across the topLeft -> bottomRight line.
     for (var x = 0; x < matrix.width; x++) {
         for (var y = x + 1; y < matrix.height; y++) {
             if (matrix.get(x, y) !== matrix.get(y, x)) {
@@ -727,10 +814,16 @@ function decode(matrix) {
     return decodeMatrix(matrix);
 }
 exports.decode = decode;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 6 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
+// tslint:disable:no-bitwise
 var BitStream_1 = __webpack_require__(7);
 var shiftJISTable_1 = __webpack_require__(8);
 var Mode;
@@ -749,12 +842,16 @@ var ModeByte;
     ModeByte[ModeByte["Byte"] = 4] = "Byte";
     ModeByte[ModeByte["Kanji"] = 8] = "Kanji";
     ModeByte[ModeByte["ECI"] = 7] = "ECI";
+    // StructuredAppend = 0x3,
+    // FNC1FirstPosition = 0x5,
+    // FNC1SecondPosition = 0x9,
 })(ModeByte || (ModeByte = {}));
 function decodeNumeric(stream, size) {
     var bytes = [];
     var text = "";
     var characterCountSize = [10, 12, 14][size];
     var length = stream.readBits(characterCountSize);
+    // Read digits in groups of 3
     while (length >= 3) {
         var num = stream.readBits(10);
         if (num >= 1000) {
@@ -767,6 +864,7 @@ function decodeNumeric(stream, size) {
         text += a.toString() + b.toString() + c.toString();
         length -= 3;
     }
+    // If the number of digits aren't a multiple of 3, the remaining digits are special cased.
     if (length === 2) {
         var num = stream.readBits(7);
         if (num >= 100) {
@@ -827,6 +925,7 @@ function decodeByte(stream, size) {
         text += decodeURIComponent(bytes.map(function (b) { return "%" + ("0" + b.toString(16)).substr(-2); }).join(""));
     }
     catch (_a) {
+        // failed to decode
     }
     return { bytes: bytes, text: text };
 }
@@ -852,6 +951,7 @@ function decodeKanji(stream, size) {
 function decode(data, version) {
     var _a, _b, _c, _d;
     var stream = new BitStream_1.BitStream(data);
+    // There are 3 'sizes' based on the version. 1-9 is small (0), 10-26 is medium (1) and 27-40 is large (2).
     var size = version <= 9 ? 0 : version <= 26 ? 1 : 2;
     var result = {
         text: "",
@@ -884,6 +984,7 @@ function decode(data, version) {
                 });
             }
             else {
+                // ECI data seems corrupted
                 result.chunks.push({
                     type: Mode.ECI,
                     assignmentNumber: -1,
@@ -929,16 +1030,23 @@ function decode(data, version) {
             });
         }
     }
+    // If there is no data left, or the remaining bits are all 0, then that counts as a termination marker
     if (stream.available() === 0 || stream.readBits(stream.available()) === 0) {
         return result;
     }
 }
 exports.decode = decode;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 7 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
+// tslint:disable:no-bitwise
 Object.defineProperty(exports, "__esModule", { value: true });
-var BitStream =  (function () {
+var BitStream = /** @class */ (function () {
     function BitStream(bytes) {
         this.byteOffset = 0;
         this.bitOffset = 0;
@@ -949,6 +1057,7 @@ var BitStream =  (function () {
             throw new Error("Cannot read " + numBits.toString() + " bits");
         }
         var result = 0;
+        // First, read remainder from current byte
         if (this.bitOffset > 0) {
             var bitsLeft = 8 - this.bitOffset;
             var toRead = numBits < bitsLeft ? numBits : bitsLeft;
@@ -962,12 +1071,14 @@ var BitStream =  (function () {
                 this.byteOffset++;
             }
         }
+        // Next read whole bytes
         if (numBits > 0) {
             while (numBits >= 8) {
                 result = (result << 8) | (this.bytes[this.byteOffset] & 0xFF);
                 this.byteOffset++;
                 numBits -= 8;
             }
+            // Finally read a partial byte
             if (numBits > 0) {
                 var bitsToNotRead = 8 - numBits;
                 var mask = (0xFF >> bitsToNotRead) << bitsToNotRead;
@@ -983,9 +1094,14 @@ var BitStream =  (function () {
     return BitStream;
 }());
 exports.BitStream = BitStream;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 8 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shiftJISTable = {
     0x20: 0x0020,
@@ -8026,14 +8142,20 @@ exports.shiftJISTable = {
     0xEAA3: 0x51DC,
     0xEAA4: 0x7199,
 };
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 9 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var GenericGF_1 = __webpack_require__(1);
 var GenericGFPoly_1 = __webpack_require__(2);
 function runEuclideanAlgorithm(field, a, b, R) {
     var _a;
+    // Assume a's degree is >= b's
     if (a.degree() < b.degree()) {
         _a = [b, a], a = _a[0], b = _a[1];
     }
@@ -8041,12 +8163,15 @@ function runEuclideanAlgorithm(field, a, b, R) {
     var r = b;
     var tLast = field.zero;
     var t = field.one;
+    // Run Euclidean algorithm until r's degree is less than R/2
     while (r.degree() >= R / 2) {
         var rLastLast = rLast;
         var tLastLast = tLast;
         rLast = r;
         tLast = t;
+        // Divide rLastLast by rLast, with quotient in q and remainder in r
         if (rLast.isZero()) {
+            // Euclidean algorithm already terminated?
             return null;
         }
         r = rLastLast;
@@ -8072,6 +8197,7 @@ function runEuclideanAlgorithm(field, a, b, R) {
     return [t.multiply(inverse), r.multiply(inverse)];
 }
 function findErrorLocations(field, errorLocator) {
+    // This is a direct application of Chien's search
     var numErrors = errorLocator.degree();
     if (numErrors === 1) {
         return [errorLocator.getCoefficient(1)];
@@ -8090,6 +8216,7 @@ function findErrorLocations(field, errorLocator) {
     return result;
 }
 function findErrorMagnitudes(field, errorEvaluator, errorLocations) {
+    // This is directly applying Forney's Formula
     var s = errorLocations.length;
     var result = new Array(s);
     for (var i = 0; i < s; i++) {
@@ -8110,7 +8237,7 @@ function findErrorMagnitudes(field, errorEvaluator, errorLocations) {
 function decode(bytes, twoS) {
     var outputBytes = new Uint8ClampedArray(bytes.length);
     outputBytes.set(bytes);
-    var field = new GenericGF_1.default(0x011D, 256, 0); 
+    var field = new GenericGF_1.default(0x011D, 256, 0); // x^8 + x^4 + x^3 + x^2 + 1
     var poly = new GenericGFPoly_1.default(field, outputBytes);
     var syndromeCoefficients = new Uint8ClampedArray(twoS);
     var error = false;
@@ -8144,9 +8271,14 @@ function decode(bytes, twoS) {
     return outputBytes;
 }
 exports.decode = decode;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 10 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VERSIONS = [
     {
@@ -9454,15 +9586,20 @@ exports.VERSIONS = [
         ],
     },
 ];
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 11 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var BitMatrix_1 = __webpack_require__(0);
 function squareToQuadrilateral(p1, p2, p3, p4) {
     var dx3 = p1.x - p2.x + p3.x - p4.x;
     var dy3 = p1.y - p2.y + p3.y - p4.y;
-    if (dx3 === 0 && dy3 === 0) { 
+    if (dx3 === 0 && dy3 === 0) { // Affine
         return {
             a11: p2.x - p1.x,
             a12: p2.y - p1.y,
@@ -9497,6 +9634,7 @@ function squareToQuadrilateral(p1, p2, p3, p4) {
     }
 }
 function quadrilateralToSquare(p1, p2, p3, p4) {
+    // Here, the adjoint serves as the inverse:
     var sToQ = squareToQuadrilateral(p1, p2, p3, p4);
     return {
         a11: sToQ.a22 * sToQ.a33 - sToQ.a23 * sToQ.a32,
@@ -9549,9 +9687,14 @@ function extract(image, location) {
     };
 }
 exports.extract = extract;
- }),
- (function(module, exports, __webpack_require__) {
+
+
+/***/ }),
+/* 12 */
+/***/ (function(module, exports, __webpack_require__) {
+
 "use strict";
+
 Object.defineProperty(exports, "__esModule", { value: true });
 var MAX_FINDERPATTERNS_TO_SEARCH = 4;
 var MIN_QUAD_RATIO = 0.5;
@@ -9560,14 +9703,17 @@ var distance = function (a, b) { return Math.sqrt(Math.pow((b.x - a.x), 2) + Mat
 function sum(values) {
     return values.reduce(function (a, b) { return a + b; });
 }
+// Takes three finder patterns and organizes them into topLeft, topRight, etc
 function reorderFinderPatterns(pattern1, pattern2, pattern3) {
     var _a, _b, _c, _d;
+    // Find distances between pattern centers
     var oneTwoDistance = distance(pattern1, pattern2);
     var twoThreeDistance = distance(pattern2, pattern3);
     var oneThreeDistance = distance(pattern1, pattern3);
     var bottomLeft;
     var topLeft;
     var topRight;
+    // Assume one closest to other two is B; A and C will just be guesses at first
     if (twoThreeDistance >= oneTwoDistance && twoThreeDistance >= oneThreeDistance) {
         _a = [pattern2, pattern1, pattern3], bottomLeft = _a[0], topLeft = _a[1], topRight = _a[2];
     }
@@ -9577,13 +9723,17 @@ function reorderFinderPatterns(pattern1, pattern2, pattern3) {
     else {
         _c = [pattern1, pattern3, pattern2], bottomLeft = _c[0], topLeft = _c[1], topRight = _c[2];
     }
+    // Use cross product to figure out whether bottomLeft (A) and topRight (C) are correct or flipped in relation to topLeft (B)
+    // This asks whether BC x BA has a positive z component, which is the arrangement we want. If it's negative, then
+    // we've got it flipped around and should swap topRight and bottomLeft.
     if (((topRight.x - topLeft.x) * (bottomLeft.y - topLeft.y)) - ((topRight.y - topLeft.y) * (bottomLeft.x - topLeft.x)) < 0) {
         _d = [topRight, bottomLeft], bottomLeft = _d[0], topRight = _d[1];
     }
     return { bottomLeft: bottomLeft, topLeft: topLeft, topRight: topRight };
 }
+// Computes the dimension (number of modules on a side) of the QR Code based on the position of the finder patterns
 function computeDimension(topLeft, topRight, bottomLeft, matrix) {
-    var moduleSize = (sum(countBlackWhiteRun(topLeft, bottomLeft, matrix, 5)) / 7 + 
+    var moduleSize = (sum(countBlackWhiteRun(topLeft, bottomLeft, matrix, 5)) / 7 + // Divide by 7 since the ratio is 1:1:3:1:1
         sum(countBlackWhiteRun(topLeft, topRight, matrix, 5)) / 7 +
         sum(countBlackWhiteRun(bottomLeft, topLeft, matrix, 5)) / 7 +
         sum(countBlackWhiteRun(topRight, topLeft, matrix, 5)) / 7) / 4;
@@ -9603,6 +9753,9 @@ function computeDimension(topLeft, topRight, bottomLeft, matrix) {
     }
     return { dimension: dimension, moduleSize: moduleSize };
 }
+// Takes an origin point and an end point and counts the sizes of the black white run from the origin towards the end point.
+// Returns an array of elements, representing the pixel size of the black white run.
+// Uses a variant of http://en.wikipedia.org/wiki/Bresenham's_line_algorithm
 function countBlackWhiteRunTowardsPoint(origin, end, matrix, length) {
     var switchPoints = [{ x: Math.floor(origin.x), y: Math.floor(origin.y) }];
     var steep = Math.abs(end.y - origin.y) > Math.abs(end.x - origin.x);
@@ -9628,7 +9781,11 @@ function countBlackWhiteRunTowardsPoint(origin, end, matrix, length) {
     var xStep = fromX < toX ? 1 : -1;
     var yStep = fromY < toY ? 1 : -1;
     var currentPixel = true;
+    // Loop up until x == toX, but not beyond
     for (var x = fromX, y = fromY; x !== toX + xStep; x += xStep) {
+        // Does current pixel mean we have moved white to black or vice versa?
+        // Scanning black in state 0,2 and white in state 1, so if we find the wrong
+        // color, advance to next state or end if we are in state 2 already
         var realX = steep ? y : x;
         var realY = steep ? x : y;
         if (matrix.get(realX, realY) !== currentPixel) {
@@ -9658,15 +9815,20 @@ function countBlackWhiteRunTowardsPoint(origin, end, matrix, length) {
     }
     return distances;
 }
+// Takes an origin point and an end point and counts the sizes of the black white run in the origin point
+// along the line that intersects with the end point. Returns an array of elements, representing the pixel sizes
+// of the black white run. Takes a length which represents the number of switches from black to white to look for.
 function countBlackWhiteRun(origin, end, matrix, length) {
     var _a;
     var rise = end.y - origin.y;
     var run = end.x - origin.x;
     var towardsEnd = countBlackWhiteRunTowardsPoint(origin, end, matrix, Math.ceil(length / 2));
     var awayFromEnd = countBlackWhiteRunTowardsPoint(origin, { x: origin.x - run, y: origin.y - rise }, matrix, Math.ceil(length / 2));
-    var middleValue = towardsEnd.shift() + awayFromEnd.shift() - 1; 
+    var middleValue = towardsEnd.shift() + awayFromEnd.shift() - 1; // Substract one so we don't double count a pixel
     return (_a = awayFromEnd.concat(middleValue)).concat.apply(_a, towardsEnd);
 }
+// Takes in a black white run and an array of expected ratios. Returns the average size of the run as well as the "error" -
+// that is the amount the run diverges from the expected ratio
 function scoreBlackWhiteRun(sequence, ratios) {
     var averageSize = sum(sequence) / sum(ratios);
     var error = 0;
@@ -9675,6 +9837,9 @@ function scoreBlackWhiteRun(sequence, ratios) {
     });
     return { averageSize: averageSize, error: error };
 }
+// Takes an X,Y point and an array of sizes and scores the point against those ratios.
+// For example for a finder pattern takes the ratio list of 1:1:3:1:1 and checks horizontal, vertical and diagonal ratios
+// against that.
 function scorePattern(point, ratios, matrix) {
     try {
         var horizontalRun = countBlackWhiteRun(point, { x: -1, y: point.y }, matrix, ratios.length);
@@ -9747,22 +9912,27 @@ function locate(matrix) {
                 scans = [scans[1], scans[2], scans[3], scans[4], length_1];
                 length_1 = 1;
                 lastBit = v;
+                // Do the last 5 color changes ~ match the expected ratio for a finder pattern? 1:1:3:1:1 of b:w:b:w:b
                 var averageFinderPatternBlocksize = sum(scans) / 7;
                 var validFinderPattern = Math.abs(scans[0] - averageFinderPatternBlocksize) < averageFinderPatternBlocksize &&
                     Math.abs(scans[1] - averageFinderPatternBlocksize) < averageFinderPatternBlocksize &&
                     Math.abs(scans[2] - 3 * averageFinderPatternBlocksize) < 3 * averageFinderPatternBlocksize &&
                     Math.abs(scans[3] - averageFinderPatternBlocksize) < averageFinderPatternBlocksize &&
                     Math.abs(scans[4] - averageFinderPatternBlocksize) < averageFinderPatternBlocksize &&
-                    !v; 
+                    !v; // And make sure the current pixel is white since finder patterns are bordered in white
+                // Do the last 3 color changes ~ match the expected ratio for an alignment pattern? 1:1:1 of w:b:w
                 var averageAlignmentPatternBlocksize = sum(scans.slice(-3)) / 3;
                 var validAlignmentPattern = Math.abs(scans[2] - averageAlignmentPatternBlocksize) < averageAlignmentPatternBlocksize &&
                     Math.abs(scans[3] - averageAlignmentPatternBlocksize) < averageAlignmentPatternBlocksize &&
                     Math.abs(scans[4] - averageAlignmentPatternBlocksize) < averageAlignmentPatternBlocksize &&
-                    v; 
+                    v; // Is the current pixel black since alignment patterns are bordered in black
                 if (validFinderPattern) {
+                    // Compute the start and end x values of the large center black square
                     var endX_1 = x - scans[3] - scans[4];
                     var startX_1 = endX_1 - scans[2];
                     var line = { startX: startX_1, endX: endX_1, y: y };
+                    // Is there a quad directly above the current spot? If so, extend it with the new line. Otherwise, create a new quad with
+                    // that line as the starting point.
                     var matchingQuads = activeFinderPatternQuads.filter(function (q) {
                         return (startX_1 >= q.bottom.startX && startX_1 <= q.bottom.endX) ||
                             (endX_1 >= q.bottom.startX && startX_1 <= q.bottom.endX) ||
@@ -9777,9 +9947,12 @@ function locate(matrix) {
                     }
                 }
                 if (validAlignmentPattern) {
+                    // Compute the start and end x values of the center black square
                     var endX_2 = x - scans[4];
                     var startX_2 = endX_2 - scans[3];
                     var line = { startX: startX_2, y: y, endX: endX_2 };
+                    // Is there a quad directly above the current spot? If so, extend it with the new line. Otherwise, create a new quad with
+                    // that line as the starting point.
                     var matchingQuads = activeAlignmentPatternQuads.filter(function (q) {
                         return (startX_2 >= q.bottom.startX && startX_2 <= q.bottom.endX) ||
                             (endX_2 >= q.bottom.startX && startX_2 <= q.bottom.endX) ||
@@ -9809,7 +9982,7 @@ function locate(matrix) {
     finderPatternQuads.push.apply(finderPatternQuads, activeFinderPatternQuads.filter(function (q) { return q.bottom.y - q.top.y >= 2; }));
     alignmentPatternQuads.push.apply(alignmentPatternQuads, activeAlignmentPatternQuads);
     var finderPatternGroups = finderPatternQuads
-        .filter(function (q) { return q.bottom.y - q.top.y >= 2; }) 
+        .filter(function (q) { return q.bottom.y - q.top.y >= 2; }) // All quads must be at least 2px tall since the center square is larger than a block
         .map(function (q) {
         var x = (q.top.startX + q.top.endX + q.bottom.startX + q.bottom.endX) / 4;
         var y = (q.top.y + q.bottom.y + 1) / 2;
@@ -9821,8 +9994,9 @@ function locate(matrix) {
         var score = scorePattern({ x: Math.round(x), y: Math.round(y) }, [1, 1, 3, 1, 1], matrix);
         return { score: score, x: x, y: y, size: size };
     })
-        .filter(function (q) { return !!q; }) 
+        .filter(function (q) { return !!q; }) // Filter out any rejected quads from above
         .sort(function (a, b) { return a.score - b.score; })
+        // Now take the top finder pattern options and try to find 2 other options with a similar size.
         .map(function (point, i, finderPatterns) {
         if (i > MAX_FINDERPATTERNS_TO_SEARCH) {
             return null;
@@ -9837,7 +10011,7 @@ function locate(matrix) {
         var score = point.score + otherPoints[0].score + otherPoints[1].score;
         return { points: [point].concat(otherPoints.slice(0, 2)), score: score };
     })
-        .filter(function (q) { return !!q; }) 
+        .filter(function (q) { return !!q; }) // Filter out any rejected finder patterns from above
         .sort(function (a, b) { return a.score - b.score; });
     if (finderPatternGroups.length === 0) {
         return null;
@@ -9854,6 +10028,11 @@ function locate(matrix) {
             topRight: { x: topRight.x, y: topRight.y },
         });
     }
+    // We normally use the center of the quads as the location of the tracking points, which is optimal for most cases and will account
+    // for a skew in the image. However, In some cases, a slight skew might not be real and instead be caused by image compression
+    // errors and/or low resolution. For those cases, we'd be better off centering the point exactly in the middle of the black area. We
+    // compute and return the location data for the naively centered points as it is little additional work and allows for multiple
+    // attempts at decoding harder images.
     var midTopRight = recenterLocation(matrix, topRight);
     var midTopLeft = recenterLocation(matrix, topLeft);
     var midBottomLeft = recenterLocation(matrix, bottomLeft);
@@ -9875,6 +10054,8 @@ function locate(matrix) {
 exports.locate = locate;
 function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, bottomLeft) {
     var _a;
+    // Now that we've found the three finder patterns we can determine the blockSize and the size of the QR code.
+    // We'll use these to help find the alignment pattern but also later when we do the extraction.
     var dimension;
     var moduleSize;
     try {
@@ -9883,6 +10064,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     catch (e) {
         return null;
     }
+    // Now find the alignment pattern
     var bottomRightFinderPattern = {
         x: topRight.x - topLeft.x + bottomLeft.x,
         y: topRight.y - topLeft.y + bottomLeft.y,
@@ -9906,9 +10088,13 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     })
         .filter(function (v) { return !!v; })
         .sort(function (a, b) { return a.score - b.score; });
+    // If there are less than 15 modules between finder patterns it's a version 1 QR code and as such has no alignmemnt pattern
+    // so we can only use our best guess.
     var alignmentPattern = modulesBetweenFinderPatterns >= 15 && alignmentPatterns.length ? alignmentPatterns[0] : expectedAlignmentPattern;
     return { alignmentPattern: alignmentPattern, dimension: dimension };
 }
- })
- ])["default"];
+
+
+/***/ })
+/******/ ])["default"];
 });

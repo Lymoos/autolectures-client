@@ -1,4 +1,4 @@
-﻿package state
+package state
 
 import "sync"
 
@@ -109,4 +109,3 @@ func (m *Machine) Reset() {
 		fn(prev, Idle)
 	}
 }
-

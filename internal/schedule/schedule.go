@@ -1,4 +1,4 @@
-﻿package schedule
+package schedule
 
 import (
 	"crypto/sha1"
@@ -28,7 +28,6 @@ const (
 	linkWait = 15 * time.Minute
 )
 
-
 type Entry struct {
 	ID            string    `json:"id"`
 	Title         string    `json:"title"`
@@ -43,7 +42,6 @@ type Entry struct {
 	Status        string    `json:"status"`
 	SecondsInside int64     `json:"seconds_inside"`
 	MarkedAt      string    `json:"marked_at"`
-
 	LinkAsked   bool `json:"link_asked,omitempty"`
 	autoStarted bool
 	linkWaiting bool
@@ -78,14 +76,12 @@ func fromRaw(raw json.RawMessage) (Entry, bool) {
 	return e, true
 }
 
-
 type Stats struct {
 	WeekLessons   int   `json:"week_lessons"`
 	Attended      int   `json:"attended"`
 	Marked        int   `json:"marked"`
 	SecondsInside int64 `json:"seconds_inside"`
 }
-
 
 type Scheduler struct {
 	http *http.Client
@@ -104,12 +100,9 @@ type Scheduler struct {
 	OnLinks     func([]json.RawMessage)
 	OnAutoStart func(url, title string)
 	OnAutoStop  func()
-
 	OnLinkWait func(title string)
-
 	OnLinkMissing func(title string, start time.Time)
 }
-
 
 func New(h *http.Client) *Scheduler {
 	s := &Scheduler{http: h}
@@ -128,7 +121,6 @@ func shortHash(s string) string {
 	return hex.EncodeToString(sum[:])[:10]
 }
 
-
 func (s *Scheduler) Load() {
 	s.mu.Lock()
 	s.entries = nil
@@ -139,7 +131,6 @@ func (s *Scheduler) Load() {
 		if !ok || (!e.End.IsZero() && !e.End.After(cutoff)) {
 			continue
 		}
-
 		if !keepEntry(e) {
 			dropped++
 			continue
@@ -171,7 +162,6 @@ func (s *Scheduler) snapshotLocked() []json.RawMessage {
 	return out
 }
 
-
 func (s *Scheduler) persist() {
 	s.mu.Lock()
 	snap := s.snapshotLocked()
@@ -198,9 +188,7 @@ func (s *Scheduler) setStatus(text string) {
 	}
 }
 
-
 func (s *Scheduler) Status() string { s.mu.Lock(); defer s.mu.Unlock(); return s.status }
-
 
 func (s *Scheduler) Entries() []Entry {
 	s.mu.Lock()
@@ -213,12 +201,9 @@ func (s *Scheduler) Entries() []Entry {
 	return out
 }
 
-
 func (s *Scheduler) ActiveID() string { s.mu.Lock(); defer s.mu.Unlock(); return s.activeID }
 
-
 func (s *Scheduler) Refresh() { s.refresh(false) }
-
 
 func (s *Scheduler) RefreshNow() { s.refresh(true) }
 
@@ -243,7 +228,7 @@ func (s *Scheduler) refresh(force bool) {
 	}()
 	s.setStatus("Загрузка расписания " + group + "…")
 
-	req, _ := http.NewRequest(http.MethodGet, "https:
+	req, _ := http.NewRequest(http.MethodGet, "https://schedule-of.mirea.ru/schedule/api/search?match="+url.QueryEscape(group), nil)
 	req.Header.Set("User-Agent", "Autolectures")
 	resp, err := s.http.Do(req)
 	if err != nil {
@@ -279,7 +264,7 @@ func (s *Scheduler) refresh(force bool) {
 			if target == 0 {
 				target = 1
 			}
-			icalURL = fmt.Sprintf("https:
+			icalURL = fmt.Sprintf("https://schedule-of.mirea.ru/schedule/api/ical/%d/%d", target, d.ID)
 		}
 		break
 	}
@@ -321,12 +306,9 @@ func firstLine(s string) string {
 	return s
 }
 
-
 var distantRe = regexp.MustCompile(`(?i)дистанц|онлайн|online|вебинар|webinar|mts-link|мтс.?линк|zoom|teams|(^|[^а-яёa-z])сдо([^а-яёa-z]|$)`)
 
-
 var weekMarkerRe = regexp.MustCompile(`(?i)^\s*\d+\s*недел`)
-
 
 func isLesson(title string, start, end time.Time) bool {
 	if title == "" || weekMarkerRe.MatchString(title) {
@@ -336,14 +318,11 @@ func isLesson(title string, start, end time.Time) bool {
 	return d > 0 && d < 20*time.Hour
 }
 
-
 func IsOnline(l ical.Lesson) bool {
 	return distantRe.MatchString(l.Location) || distantRe.MatchString(l.Description) || distantRe.MatchString(l.Title)
 }
 
-
 func keepLesson(l ical.Lesson) bool { return isLesson(l.Title, l.Start, l.End) && IsOnline(l) }
-
 
 func keepEntry(e Entry) bool {
 	if !isLesson(e.Title, e.Start, e.End) {
@@ -358,7 +337,6 @@ func keepEntry(e Entry) bool {
 func (s *Scheduler) merge(lessons []ical.Lesson) {
 	s.mu.Lock()
 	skipped := 0
-
 	kept := s.entries[:0]
 	for _, e := range s.entries {
 		if keepEntry(e) {
@@ -369,7 +347,6 @@ func (s *Scheduler) merge(lessons []ical.Lesson) {
 	}
 	s.entries = kept
 	for _, l := range lessons {
-
 		if !keepLesson(l) {
 			skipped++
 			continue
@@ -389,7 +366,6 @@ func (s *Scheduler) merge(lessons []ical.Lesson) {
 		}
 		e := Entry{ID: id, Title: l.Title, Start: l.Start, End: l.End, Location: l.Location,
 			Teacher: firstLine(l.Description), Source: "schedule", Status: proto.LinkPending}
-
 		for i := range s.entries {
 			o := &s.entries[i]
 			if o.Source == "schedule" || o.URL == "" {
@@ -434,7 +410,6 @@ func (s *Scheduler) currentLessonLocked() *Entry {
 	return nil
 }
 
-
 func (s *Scheduler) AddInvitation(inv mailmon.Invitation, subject string) {
 	s.mu.Lock()
 	if e := s.findByURLLocked(inv.URL); e != nil {
@@ -445,7 +420,6 @@ func (s *Scheduler) AddInvitation(inv mailmon.Invitation, subject string) {
 		s.persist()
 		return
 	}
-
 	var best *Entry
 	bestDiff := time.Duration(matchTolMin)*time.Minute + 1
 	if !inv.When.IsZero() {
@@ -486,7 +460,6 @@ func (s *Scheduler) AddInvitation(inv mailmon.Invitation, subject string) {
 	s.persist()
 }
 
-
 func (s *Scheduler) AttachManualURL(u, title string) {
 	s.mu.Lock()
 	if s.findByURLLocked(u) != nil {
@@ -510,7 +483,6 @@ func (s *Scheduler) AttachManualURL(u, title string) {
 	s.persist()
 }
 
-
 func (s *Scheduler) ApplyRemote(links []json.RawMessage) {
 	s.mu.Lock()
 	changed := false
@@ -520,7 +492,6 @@ func (s *Scheduler) ApplyRemote(links []json.RawMessage) {
 		if !ok {
 			continue
 		}
-
 		if !keepEntry(r) || (!r.End.IsZero() && r.End.Before(cutoff)) {
 			continue
 		}
@@ -560,12 +531,9 @@ func (s *Scheduler) ApplyRemote(links []json.RawMessage) {
 	s.mu.Unlock()
 }
 
-
 func (s *Scheduler) SetArmed(v bool) { s.mu.Lock(); s.armed = v; s.mu.Unlock() }
 
-
 func (s *Scheduler) SetSessionActive(v bool) { s.mu.Lock(); s.sessionActive = v; s.mu.Unlock() }
-
 
 func (s *Scheduler) OnSessionStarted(u, title string) {
 	s.mu.Lock()
@@ -590,7 +558,6 @@ func (s *Scheduler) OnSessionStarted(u, title string) {
 	s.persist()
 }
 
-
 func (s *Scheduler) OnSessionStopped() {
 	s.mu.Lock()
 	s.sessionActive = false
@@ -603,7 +570,6 @@ func (s *Scheduler) OnSessionStopped() {
 	s.mu.Unlock()
 	s.persist()
 }
-
 
 func (s *Scheduler) OnAttendanceMarked() {
 	s.mu.Lock()
@@ -649,7 +615,6 @@ func (s *Scheduler) tick() {
 			autoStart = &cp
 			continue
 		}
-
 		if s.armed && e.Source == "schedule" && e.URL == "" && e.Status == proto.LinkPending && now.Before(e.End) {
 			switch {
 			case !e.linkWaiting && !now.Before(e.Start):
@@ -694,7 +659,6 @@ func (s *Scheduler) tick() {
 	}
 }
 
-
 func (s *Scheduler) Stats() Stats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -717,4 +681,3 @@ func (s *Scheduler) Stats() Stats {
 	}
 	return st
 }
-

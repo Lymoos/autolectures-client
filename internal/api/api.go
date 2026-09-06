@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"bytes"
@@ -15,10 +15,10 @@ import (
 )
 
 type Result struct {
-	OK     bool           
-	Status int            
-	Body   map[string]any 
-	Err    string         
+	OK     bool
+	Status int
+	Body   map[string]any
+	Err    string
 }
 
 type Client struct {
@@ -102,4 +102,3 @@ func friendlyNetErr(err error) string {
 	}
 	return err.Error()
 }
-

@@ -1,4 +1,4 @@
-﻿package notify
+package notify
 
 import (
 	"github.com/Lymoos/autolectures/client/internal/hub"
@@ -15,4 +15,3 @@ func (n *Notifier) Notify(event, text string, data map[string]any) {
 		n.hub.SendNotify(event, text, data)
 	}
 }
-

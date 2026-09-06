@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package app
 
@@ -35,7 +35,7 @@ import (
 
 const (
 	src          = "Окно"
-	escoLoginURL = "https:
+	escoLoginURL = "https://attendance.mirea.ru/"
 	chromeUA     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 	menuOpen   = 1
@@ -147,7 +147,6 @@ func Run(assets Assets, opt Options) int {
 	a.wireBridge()
 	a.wireServices()
 
-
 	a.br = newBridge(a.ui, a.dispatch)
 	a.registerHandlers()
 	logger.Subscribe(func(e logger.Entry) { a.br.EmitAsync("log", e) })
@@ -155,6 +154,8 @@ func Run(assets Assets, opt Options) int {
 		a.br.Emit("log", e)
 	}
 
+	html := strings.Replace(assets.IndexHTML, "/*CSS*/", assets.CSS, 1)
+	html = strings.Replace(html, "/*JS*/", assets.JS, 1)
 	a.ui.NavigateHTML(html)
 	a.layout()
 	a.wnd.Show()
@@ -293,7 +294,7 @@ func (a *App) wireServices() {
 	}
 	a.hub.OnCommand = func(msg map[string]any) { a.dispatch(func() { a.engine.HandleHubCommand(msg) }) }
 	a.hub.OnSettings = func(s map[string]any) { a.dispatch(func() { a.cfg.ApplySynced(s); a.emitState() }) }
-	a.hub.OnAuthFailed = func(string) { a.dispatch(a.emitState) 	}
+	a.hub.OnAuthFailed = func(string) { a.dispatch(a.emitState) }
 
 	a.account.OnChanged = func() {
 		a.dispatch(func() {
@@ -470,7 +471,6 @@ func (a *App) restore() {
 	a.eco.SetWindowVisible(true)
 }
 
-
 func (a *App) layout() {
 	r := win.GetClientRect(a.wnd.HWnd)
 	b := a.wnd.Border()
@@ -481,7 +481,6 @@ func (a *App) layout() {
 	a.auth.SetBounds(x, y, max32(w, 1), max32(h, 1), showLogin)
 	a.stage.SetBounds(x, y, max32(w, 1), max32(h, 1), a.stageShown())
 }
-
 
 func (a *App) previewBounds(b int32) (x, y, w, h int32, ok bool) {
 	p := a.preview
@@ -494,7 +493,6 @@ func (a *App) previewBounds(b int32) (x, y, w, h int32, ok bool) {
 	return x, y, w, h, w > 10 && h > 10 && a.tab == 0
 }
 
-
 func (a *App) scheduleEscoCheck(after time.Duration) {
 	time.AfterFunc(after, func() {
 		a.dispatch(func() {
@@ -505,7 +503,6 @@ func (a *App) scheduleEscoCheck(after time.Duration) {
 		})
 	})
 }
-
 
 func (a *App) stageShown() bool {
 	_, _, _, _, haveRect := a.previewBounds(a.wnd.Border())
@@ -648,7 +645,6 @@ func (a *App) registerHandlers() {
 		a.cfg.SetBossKey(c.Str("bossKey"))
 		a.cfg.SetEcoMode(c.Bool("eco"))
 		a.cfg.SetMinimizeToTray(c.Bool("tray"))
-
 		return nil, nil
 	})
 
@@ -732,7 +728,6 @@ func (a *App) registerHandlers() {
 		a.layout()
 		logger.Infof(src, "Окно авторизации ЕСКО закрыто, проверяю состояние входа")
 		a.emitState()
-
 		a.scheduleEscoCheck(2 * time.Second)
 		return nil, nil
 	})
@@ -763,7 +758,6 @@ func (a *App) registerHandlers() {
 	})
 }
 
-
 func (a *App) snapshot() map[string]any {
 	m := a.cfg.MailSettings()
 	return map[string]any{
@@ -778,7 +772,6 @@ func (a *App) snapshot() map[string]any {
 			"active": a.engine.Active(), "state": a.engine.State().Title(), "title": a.engine.CurrentTitle(),
 			"seconds": a.engine.Seconds(), "marked": a.marked, "url": a.engine.CurrentURL(),
 		},
-
 		"stageShown": a.stageShown(),
 		"eco":        map[string]any{"lowPower": a.eco.LowPower(), "reason": a.eco.Reason()},
 		"mail": map[string]any{"configured": m.Valid(), "host": m.Host, "port": m.Port, "user": m.User,
@@ -817,7 +810,6 @@ var (
 	pFindWindow = user32.NewProc("FindWindowW")
 )
 
-
 func acquireSingleInstance() bool {
 	name, _ := windows.UTF16PtrFromString("Local\\AutolecturesSingleInstance")
 	_, err := windows.CreateMutex(nil, false, name)
@@ -833,7 +825,6 @@ func acquireSingleInstance() bool {
 	return true
 }
 
-
 func appIconPNG() []byte {
 	const n = 32
 	img := image.NewRGBA(image.Rect(0, 0, n, n))
@@ -848,7 +839,6 @@ func appIconPNG() []byte {
 			}
 		}
 	}
-
 	for y := 10; y < 22; y++ {
 		half := float64(y-16) * 0.5
 		if half < 0 {
@@ -863,9 +853,7 @@ func appIconPNG() []byte {
 	return buf.Bytes()
 }
 
-
 func dataFile(name string) string { return filepath.Join(config.Get().DataDir(), name) }
 
 var _ = dataFile
 var _ = os.Getenv
-

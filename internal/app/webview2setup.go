@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package app
 
@@ -16,7 +16,7 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/win"
 )
 
-const webview2BootstrapURL = "https:
+const webview2BootstrapURL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
 func (a *App) newView(o webview.Options) (*webview.View, error) {
 	v, err := webview.New(a.wnd, o)
@@ -57,4 +57,3 @@ func installWebView2(dataDir string) error {
 	cmd := exec.Command(setup, "/silent", "/install")
 	return cmd.Run()
 }
-

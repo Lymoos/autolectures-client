@@ -1,4 +1,4 @@
-﻿package schedule
+package schedule
 
 import (
 	"os"
@@ -41,12 +41,11 @@ func lesson(title string, start time.Time, url string) Entry {
 		Location: "Дистанционно (СДО)", Source: "schedule", Status: proto.LinkPending, URL: url}
 }
 
-
 func TestFlowLinkKnown(t *testing.T) {
 	s, ev := newTestScheduler(), &events{}
 	s.collect(ev)
 	start := time.Now().Add(-30 * time.Second)
-	s.entries = []Entry{lesson("ЛК Сети", start, "https:
+	s.entries = []Entry{lesson("ЛК Сети", start, "https://my.mts-link.ru/j/1")}
 	s.armed = true
 
 	s.tick()
@@ -57,7 +56,6 @@ func TestFlowLinkKnown(t *testing.T) {
 		t.Errorf("лишний запрос ссылки: %v", ev.asks)
 	}
 }
-
 
 func TestFlowLinkMissing(t *testing.T) {
 	s, ev := newTestScheduler(), &events{}
@@ -75,7 +73,6 @@ func TestFlowLinkMissing(t *testing.T) {
 		t.Fatalf("до 15 минут просить нельзя: ожидания=%v запросы=%v", ev.waits, ev.asks)
 	}
 
-
 	s.entries[0].Start = time.Now().Add(-linkWait - time.Minute)
 	s.tick()
 	if len(ev.asks) != 1 {
@@ -91,7 +88,6 @@ func TestFlowLinkMissing(t *testing.T) {
 	}
 }
 
-
 func TestFlowLinkArrivesByMail(t *testing.T) {
 	s, ev := newTestScheduler(), &events{}
 	s.collect(ev)
@@ -103,7 +99,7 @@ func TestFlowLinkArrivesByMail(t *testing.T) {
 	if len(ev.waits) != 1 {
 		t.Fatalf("ожидание не началось: %v", ev.waits)
 	}
-	s.AddInvitation(mailmon.Invitation{URL: "https:
+	s.AddInvitation(mailmon.Invitation{URL: "https://my.mts-link.ru/j/42", When: start, Title: "Лекция"}, "тема")
 	s.tick()
 	if len(ev.started) != 1 {
 		t.Fatalf("ожидался автозапуск по ссылке из письма, получено %v", ev.started)
@@ -112,7 +108,6 @@ func TestFlowLinkArrivesByMail(t *testing.T) {
 		t.Errorf("запрос ссылки не нужен: %v", ev.asks)
 	}
 }
-
 
 func TestFlowManualLinkAfterAsk(t *testing.T) {
 	s, ev := newTestScheduler(), &events{}
@@ -126,13 +121,12 @@ func TestFlowManualLinkAfterAsk(t *testing.T) {
 	if len(ev.asks) != 1 {
 		t.Fatalf("ожидался запрос ссылки, получено %v", ev.asks)
 	}
-	s.AttachManualURL("https:
+	s.AttachManualURL("https://my.mts-link.ru/j/77", "")
 	s.tick()
 	if len(ev.started) != 1 {
 		t.Fatalf("ожидался автозапуск по присланной ссылке, получено %v", ev.started)
 	}
 }
-
 
 func TestFlowDisarmed(t *testing.T) {
 	s, ev := newTestScheduler(), &events{}
@@ -146,4 +140,3 @@ func TestFlowDisarmed(t *testing.T) {
 		t.Errorf("без активной сессии событий быть не должно: %v %v %v", ev.waits, ev.asks, ev.started)
 	}
 }
-

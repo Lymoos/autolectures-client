@@ -1,5 +1,3 @@
-﻿//go:build windows
-
 package win
 
 import (
@@ -67,7 +65,6 @@ var (
 	pCreateSolidBrush              = gdi32.NewProc("CreateSolidBrush")
 	pDeleteObject                  = gdi32.NewProc("DeleteObject")
 )
-
 
 const (
 	WS_POPUP        = 0x80000000
@@ -296,7 +293,6 @@ func GetSystemMetrics(index int) int32 {
 	return int32(r)
 }
 
-
 func DpiForWindow(hwnd uintptr) int {
 	if pGetDpiForWindow.Find() != nil {
 		return 96
@@ -308,14 +304,12 @@ func DpiForWindow(hwnd uintptr) int {
 	return int(r)
 }
 
-
 func EnablePerMonitorDPI() {
 	if pSetProcessDpiAwarenessContext.Find() == nil {
 		const perMonitorV2 = ^uintptr(3)
 		_, _, _ = pSetProcessDpiAwarenessContext.Call(perMonitorV2)
 	}
 }
-
 
 func WorkArea(hwnd uintptr) RECT {
 	m, _, _ := pMonitorFromWindow.Call(hwnd, MONITOR_DEFAULTTONEAREST)
@@ -325,17 +319,14 @@ func WorkArea(hwnd uintptr) RECT {
 	return mi.Work
 }
 
-
 func DwmSet(hwnd uintptr, attr uint32, value int32) bool {
 	r, _, _ := pDwmSetWindowAttribute.Call(hwnd, uintptr(attr), uintptr(unsafe.Pointer(&value)), 4)
 	return r == 0
 }
 
-
 func DwmExtendFrame(hwnd uintptr, m MARGINS) {
 	_, _, _ = pDwmExtendFrameIntoClientArea.Call(hwnd, uintptr(unsafe.Pointer(&m)))
 }
-
 
 func IconFromPNG(png []byte, size int32) uintptr {
 	if len(png) == 0 {
@@ -346,11 +337,9 @@ func IconFromPNG(png []byte, size int32) uintptr {
 	return h
 }
 
-
 func OpenURL(url string) {
 	_, _, _ = pShellExecuteW.Call(0, uintptr(unsafe.Pointer(utf16("open"))), uintptr(unsafe.Pointer(utf16(url))), 0, 0, SW_SHOW)
 }
-
 
 func SetClipboardText(hwnd uintptr, text string) bool {
 	u, err := syscall.UTF16FromString(text)
@@ -377,7 +366,6 @@ func SetClipboardText(hwnd uintptr, text string) bool {
 	return r != 0
 }
 
-
 func FillClient(hwnd, hdc uintptr, colorBGR uint32) {
 	brush, _, _ := pCreateSolidBrush.Call(uintptr(colorBGR))
 	if brush == 0 {
@@ -388,15 +376,12 @@ func FillClient(hwnd, hdc uintptr, colorBGR uint32) {
 	_, _, _ = pDeleteObject.Call(brush)
 }
 
-
 func RegisterHotKey(hwnd uintptr, id int, mods, vk uint32) bool {
 	r, _, _ := pRegisterHotKey.Call(hwnd, uintptr(id), uintptr(mods), uintptr(vk))
 	return r != 0
 }
 func UnregisterHotKey(hwnd uintptr, id int) { _, _, _ = pUnregisterHotKey.Call(hwnd, uintptr(id)) }
 
-
 func MessageBox(hwnd uintptr, title, text string) {
 	_, _, _ = pMessageBoxW.Call(hwnd, uintptr(unsafe.Pointer(utf16(text))), uintptr(unsafe.Pointer(utf16(title))), 0x30)
 }
-

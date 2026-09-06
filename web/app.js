@@ -1,8 +1,10 @@
-﻿(function () {
+// Логика интерфейса. Источник данных — событие 'state' от Go.
+(function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var S = {};            
+  var S = {};            // последний снимок состояния
   var seq = 0, pending = {};
+
   var AL = window.AL = {
     call: function (method, args) {
       return new Promise(function (res, rej) {
@@ -22,6 +24,7 @@
   };
   var handlers = {};
   function on(name, fn) { handlers[name] = fn; }
+
   function fmtDur(s) {
     s = Math.max(0, Math.floor(s || 0));
     var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
@@ -29,6 +32,7 @@
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function show(el, v) { el.classList.toggle('hidden', !v); }
+
   var currentTab = 0;
   function showTab(i) {
     currentTab = i;
@@ -38,6 +42,7 @@
     if (i === 0) sendPreviewRect();
   }
   document.querySelectorAll('#tabs .tab').forEach(function (b) { b.addEventListener('click', function () { showTab(+b.dataset.tab); }); });
+
   function dragStart(e) {
     if (e.button !== 0) return;
     if (e.target.closest('button, input, .tabs')) return;
@@ -49,11 +54,13 @@
   $('btn-min').onclick = function () { AL.call('window', { cmd: 'minimize' }); };
   $('btn-tray').onclick = function () { AL.call('window', { cmd: 'tray' }); };
   $('btn-close').onclick = function () { AL.call('window', { cmd: 'close' }); };
+
   function sendPreviewRect() {
     var r = $('previewer').getBoundingClientRect();
     AL.call('previewRect', { x: r.left, y: r.top, w: r.width, h: r.height, dpr: window.devicePixelRatio || 1 });
   }
   window.addEventListener('resize', sendPreviewRect);
+
   var volOpen = false;
   $('btn-volume').onclick = function (e) { e.stopPropagation(); volOpen = !volOpen; $('volume-pop').classList.toggle('open', volOpen); show($('volume-pop'), true); };
   document.addEventListener('mousedown', function (e) { if (volOpen && !e.target.closest('.volume-wrap')) { volOpen = false; $('volume-pop').classList.remove('open'); } });
@@ -67,6 +74,8 @@
   }
   $('volume').addEventListener('input', function () { var v = +this.value; applyVolumeUI(v); AL.call('setVolume', { volume: v }); });
   $('btn-mute').onclick = function () { var v = +$('volume').value === 0 ? lastNonZero : 0; applyVolumeUI(v); AL.call('setVolume', { volume: v }); };
+
+  // очистку надо сообщить в Go
   $('url-clear').onclick = function () { $('url').value = ''; AL.call('setUrl', { url: '' }); $('url').focus(); };
   $('url').addEventListener('keydown', function (e) { if (e.key === 'Enter') AL.call('submitUrl', { url: this.value.trim() }); });
   $('url').addEventListener('change', function () { AL.call('setUrl', { url: this.value.trim() }); });
@@ -78,6 +87,7 @@
   $('btn-mail').onclick = function () { openDialog('mail'); loadMailForm(); };
   $('btn-account').onclick = function () { openDialog('account'); accPage('acc'); };
   $('btn-update').onclick = function () { AL.call('update'); };
+
   var dialog = null;
   function openDialog(name) {
     dialog = name;
@@ -99,6 +109,8 @@
     if (e.key === 'Escape') closeDialog();
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') AL.call('copyLog');
   });
+
+  // аккаунт
   var registerMode = false;
   function accPage(p) {
     document.querySelectorAll('#dlg-account [data-page]').forEach(function (b) { b.classList.toggle('active', b.dataset.page === p); });
@@ -129,6 +141,7 @@
   $('acc-pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') attempt(); });
   $('btn-guest').onclick = function () { AL.call('guest'); closeDialog(); };
   $('btn-signout').onclick = function () { AL.call('logout'); };
+
   function fillSettings() {
     var s = S.settings || {};
     $('set-nick').value = s.nickname || ''; $('set-group').value = s.group || ''; $('set-server').value = s.server || '';
@@ -140,13 +153,17 @@
       bossKey: $('set-boss').value.trim() || 'Ctrl+Shift+H', eco: $('set-eco').checked, tray: $('set-tray').checked
     });
   }
+
+  // почта
   function loadMailForm() {
     var m = S.mail || {};
     $('mail-host').value = m.host || ''; $('mail-port').value = m.port || 993; $('mail-user').value = m.user || ''; $('mail-pass').value = '';
     $('mail-sender').value = m.sender || '';
     show($('mail-msg'), false); show($('btn-mail-disconnect'), !!m.configured); $('btn-mail-connect').disabled = false;
+    // почта подключена — остаётся только «Отключить»
     show($('btn-mail-connect'), !m.configured);
   }
+  // правка полей возвращает кнопку
   ['mail-host', 'mail-port', 'mail-user', 'mail-pass', 'mail-sender'].forEach(function (id) {
     $(id).addEventListener('input', function () { show($('btn-mail-connect'), true); });
   });
@@ -173,6 +190,8 @@
       .finally(function () { $('btn-mail-connect').disabled = false; });
   };
   $('btn-mail-disconnect').onclick = function () { AL.call('mailDisconnect'); closeDialog(); };
+
+  // telegram: код уходит в deep-link, руками ничего не вводится
   var tgPoll = null, tgDeepLink = '';
   function tgStatus(text, cls) { $('tg-status').innerHTML = text; $('tg-status').style.color = cls === 'ok' ? 'var(--ok)' : cls === 'err' ? 'var(--danger)' : 'var(--muted)'; }
   function telegramFlow() {
@@ -186,7 +205,7 @@
         if (!tgDeepLink) return tgStatus('Telegram-бот на сервере не настроен', 'err');
         AL.call('openUrl', { url: tgDeepLink });
         tgStatus('Открылся чат с ботом — нажмите в нём <b>Start</b>, дальше всё подключится само.');
-        show($('btn-tg-open'), true);   
+        show($('btn-tg-open'), true);   // на случай, если чат не открылся сам
         tgPoll = setInterval(function () {
           AL.call('telegramStatus').then(function (st) {
             if (st.linked) { clearInterval(tgPoll); show($('btn-tg-open'), false); tgStatus('✓ Telegram привязан' + (st.username ? ': @' + esc(st.username) : ''), 'ok'); }
@@ -197,6 +216,7 @@
   }
   $('btn-tg-open').onclick = function () { if (tgDeepLink) AL.call('openUrl', { url: tgDeepLink }); };
   $('overlay').addEventListener('transitionend', function () {});
+
   $('btn-refresh').onclick = function () { AL.call('scheduleRefresh'); };
   $('btn-group').onclick = function () { openDialog('account'); accPage('set'); };
   var lastSig = '';
@@ -220,6 +240,7 @@
     var now = Date.now(), cutoff = now - 3 * 3600e3;
     var items = (d.entries || []).filter(function (e) { return e.id === d.activeId || new Date(e.end).getTime() >= cutoff; }).slice(0, 40);
     var sig = items.map(function (e) { return e.id + e.status + e.url; }).join('|') + d.activeId;
+    // Таймер активной лекции обновляем без перестройки списка
     if (sig === lastSig) {
       var t = document.querySelector('.entry.active .timer');
       var a = items.filter(function (e) { return e.id === d.activeId; })[0];
@@ -256,6 +277,7 @@
     if (b.dataset.open) AL.call('openUrl', { url: b.dataset.open });
     if (b.dataset.connect) { AL.call('connect', { url: b.dataset.connect, title: b.dataset.title }); showTab(0); }
   });
+
   var minLevel = 1, logTotal = 0, levelNames = ['ОТЛАДКА', 'ИНФО', 'ПРЕДУПР', 'ОШИБКА'];
   function addLog(e) {
     var div = document.createElement('div');
@@ -279,6 +301,7 @@
   });
   $('btn-copy-log').onclick = function () { AL.call('copyLog'); };
   $('btn-clear-log').onclick = function () { $('log').innerHTML = ''; logTotal = 0; $('log-count').textContent = ''; };
+
   var obSteps = [], obIndex = -1;
   function obStep(i) {
     obIndex = i; var s = obSteps[i]; showTab(s.tab || 0);
@@ -297,6 +320,7 @@
       else if (r.bottom + 14 + th <= H - m) { x = r.left + r.width / 2 - tw / 2; y = r.bottom + 14; }
       else if (r.top - 14 - th >= m) { x = r.left + r.width / 2 - tw / 2; y = r.top - 14 - th; }
       else { x = r.left + r.width / 2 - tw / 2; y = r.top + r.height / 2 - th / 2; }
+      // Панель обязана целиком помещаться в окно
       x = Math.max(m, Math.min(x, W - tw - m)); y = Math.max(m, Math.min(y, H - th - m));
       tip.style.left = x + 'px'; tip.style.top = y + 'px';
     }, 60);
@@ -318,6 +342,8 @@
     show($('onboard'), true); AL.call('overlay', { open: true }); obStep(0);
   }
   window.addEventListener('resize', function () { if (obIndex >= 0) obStep(obIndex); });
+
+  // Результат отметки по QR: подпись и цвет.
   var attendLook = {
     SUCCESS: ['✓ Отмечено', 'a-ok'],
     NEEDS_AUTH: ['✖ Не авторизован', 'a-err'],
@@ -329,6 +355,7 @@
   on('state', function (s) {
     S = s;
     document.body.classList.toggle('transparent', !!s.transparent);
+    // соединение
     var c = $('conn');
     if (s.account.guest) { c.textContent = '● локально'; c.className = 'conn local'; c.title = 'Гостевой режим: сервер не используется, настройки и статусы хранятся на этом ПК'; }
     else if (s.connection.online) { c.textContent = '● онлайн'; c.className = 'conn online'; c.title = 'Соединение с сервером установлено'; }
@@ -337,6 +364,7 @@
     $('account-dot').classList.toggle('on', !s.account.guest);
     $('mode-hint').textContent = s.account.guest ? 'Гостевой режим: данные хранятся только на этом ПК, Telegram недоступен' : 'Настройки и статусы синхронизируются с сервером';
     $('btn-telegram').disabled = s.account.guest;
+    // После привязки на кнопке — привязанный ник, а не слово «Telegram».
     var tg = s.telegram || {};
     $('dot-telegram').classList.toggle('on', !!tg.linked);
     $('telegram-label').textContent = tg.linked ? (tg.username ? '@' + tg.username : 'Telegram привязан') : 'Telegram';
@@ -344,6 +372,7 @@
       : 'Привязать Telegram-бота: команды и уведомления';
     var esco = s.esco || {};
     $('dot-esco').classList.toggle('on', !!esco.ok);
+    // вход в ЕСКО определяется по странице
     $('esco-label').textContent = esco.loginActive ? 'Готово, вернуться' : (esco.ok && esco.name ? 'МИРЭА: ' + esco.name : 'МИРЭА');
     $('btn-esco').title = esco.loginActive ? 'Закрыть окно входа и вернуться к трансляции'
       : esco.ok ? 'Вход в ЕСКО выполнен' + (esco.name ? ' (' + esco.name + ')' : '') + ' — отметка по QR-коду работает'
@@ -352,12 +381,14 @@
     $('mail-row').classList.toggle('collapsed', !s.mail.configured);
     $('mail-toggle').checked = !!s.mail.monitoring; $('mail-status').textContent = s.mail.status || (s.mail.monitoring ? 'Мониторинг активен' : 'Мониторинг выключен');
     if (document.activeElement !== $('url') && s.url != null && $('url').value !== s.url) $('url').value = s.url;
+    // сессия
     $('start-label').textContent = s.globalSession ? 'Стоп' : 'Старт';
     $('btn-start').className = 'btn big ' + (s.globalSession ? 'danger' : 'primary');
     $('btn-start').firstElementChild.className = 'ico ' + (s.globalSession ? 'ico-stop' : 'ico-play');
     var ses = s.session;
     show($('lecture-line'), ses.active); $('lecture-line').textContent = '● В лекции: ' + ses.title;
     show($('pill'), ses.active); $('pill-state').textContent = ses.state; $('pill-timer').textContent = fmtDur(ses.seconds);
+    // Итог отметки по QR-коду: зелёный — засчитана, жёлтый — осечка.
     var at = s.attendance || {}, look = attendLook[at.status];
     if (look && ses.active) {
       $('pill-attend').textContent = look[0];
@@ -366,6 +397,7 @@
     }
     show($('pill-attend'), !!look && ses.active);
     show($('pill-eco'), ses.active && s.eco.lowPower);
+    // заглушку прячем, только когда сцена реально видна
     var ph = $('placeholder');
     if (s.stageShown) ph.classList.add('fade');
     else {
@@ -374,17 +406,22 @@
       else if (ses.active) { $('ph-title').textContent = 'Подключение к трансляции'; $('ph-text').textContent = ses.title || 'Открываю страницу лекции'; show($('btn-watch'), false); }
       else { $('ph-title').textContent = 'Нет активной трансляции'; $('ph-text').textContent = s.idleHint || 'Вставьте ссылку слева и нажмите «Старт», либо дождитесь ссылки из почты или Telegram'; show($('btn-watch'), false); }
     }
+    // громкость
     if (document.activeElement !== $('volume')) applyVolumeUI(s.volume);
+    // обновление
     var u = s.update || {};
     show($('btn-update'), !!u.available);
     $('btn-update').disabled = u.progress >= 0;
     $('btn-update').textContent = u.progress >= 100 ? 'Перезапуск…' : u.progress >= 0 ? 'Загрузка ' + u.progress + '%' : 'Обновить до ' + u.version;
+    // аккаунт-диалог
     $('acc-status').innerHTML = s.account.guest ? 'Гостевой режим. Войдите, чтобы синхронизировать настройки между устройствами и подключить Telegram.'
       : 'Вы вошли как <b>' + esc(s.account.login) + '</b>. Настройки, ссылки и статусы синхронизируются с сервером.';
     show($('acc-form'), s.account.guest); show($('btn-signout'), !s.account.guest);
+    // онбординг при первом запуске
     if (!s.onboardingDone && !onboardingStarted) { onboardingStarted = true; setTimeout(startOnboarding, 600); }
     sendPreviewRect();
   });
+
   AL.call('ready').then(function () { sendPreviewRect(); });
   new ResizeObserver(sendPreviewRect).observe($('previewer'));
 })();

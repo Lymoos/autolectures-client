@@ -1,15 +1,22 @@
-﻿(function () {
+// autojoin.js — автоматический гостевой вход на трансляцию MTS-Link.
+(function () {
   var AL = window.__AL;
-  if (!AL) return;   
+  if (!AL) return;   // не главный фрейм
+
   var BUTTONS = ['button, [role="button"], input[type="submit"]', 'a'];
   var NAME_SELECTOR = 'input[placeholder*="имя" i], input[placeholder*="name" i], ' +
                       'input[name*="name" i], input[aria-label*="имя" i], input[type="text"]';
   var RE_NO_DEVICES = /БЕЗ\s+(МИКРОФОНА|УСТРОЙСТВ|КАМЕРЫ)|WITHOUT\s+(CAMERA|DEVICE|MIC)/i;
+  // JOIN — англоязычный виджет входа, часто в iframe
   var RE_JOIN = /ПРИСОЕДИН|ПОДКЛЮЧИТЬСЯ|ВОЙТИ|JOIN|ENTER/i;
+  // «Присоединиться в приложении МТС Линк» открывает внешнее приложение.
   var RE_SKIP_JOIN = /БЕЗ\s+(МИКРОФОНА|УСТРОЙСТВ|КАМЕРЫ)|WITHOUT\s+(CAMERA|DEVICE|MIC)|В\s+ПРИЛОЖЕНИИ|IN\s+THE\s+APP|СКАЧА|DOWNLOAD|УСТАНОВ/i;
   var RE_IN_ROOM = /ВЫЙТИ\s+В\s+ЭФИР|ПОКИНУТЬ|LEAVE\s+(ROOM|EVENT|MEETING)/i;
   var RE_NAME_OK = /имя|name|как\s+вас\s+зовут/i;
+  // Поле чата, поиска и прочие текстовые поля комнаты именем заполнять нельзя.
   var RE_NAME_SKIP = /сообщени|message|чат|chat|поиск|search|почт|e-?mail|пароль|password|код|code|вопрос|question/i;
+
+  // Безымянное текстовое поле считается полем имени только рядом с кнопкой.
   function findNameInput(loginFormPresent) {
     var nodes = AL.deepQuery(NAME_SELECTOR);
     var fallback = null;
@@ -23,6 +30,8 @@
     }
     return loginFormPresent ? fallback : null;
   }
+
+  // Признаки того, что страница уже показывает комнату, а не форму входа.
   function inRoom() {
     if (AL.findButton(BUTTONS, RE_IN_ROOM, null, 60)) return true;
     if (AL.first(AL.deepQuery('input[placeholder*="сообщени" i], textarea[placeholder*="сообщени" i], '
@@ -32,6 +41,7 @@
       if (videos[i].readyState >= 2 || AL.isVisible(videos[i])) return true;
     return false;
   }
+
   AL.onReady(function (bridge) {
     var joined = false;
     var nameFilled = false;
@@ -41,34 +51,44 @@
     var lastRun = 0;
     var timer = null;
     var observer = null;
+
     function stop() {
       if (timer) { clearInterval(timer); timer = null; }
       if (observer) { observer.disconnect(); observer = null; }
     }
+
     function finish(reason) {
       joined = true;
       stop();
       AL.log('info', reason);
       setTimeout(function () { AL.post({ type: 'joined', title: document.title || 'Трансляция' }); }, 2000);
     }
+
     function tick() {
       if (joined) { stop(); return; }
       var now = Date.now();
-      if (now - lastRun < 150) return;   
+      if (now - lastRun < 150) return;   // защита от шквала мутаций DOM
       lastRun = now;
       if (now - startedAt > 180000) {
         stop();
         AL.log('warn', 'Автовход: форма входа не пройдена за 3 минуты');
         return;
       }
+
+      // 1. Кнопка входа без устройств — последний шаг сценария.
       var noDevices = AL.findButton(BUTTONS, RE_NO_DEVICES, null, 80);
       if (noDevices) {
         AL.realClick(noDevices);
         finish('Нажата кнопка «' + AL.label(noDevices) + '» — вход на трансляцию выполнен');
         return;
       }
+
+      // по кнопке входа отличаем форму от комнаты
       var join = AL.findButton(BUTTONS, RE_JOIN, RE_SKIP_JOIN, 80);
+
+      // 2. имя участника
       var input = findNameInput(join !== null);
+      // имя уже подставлено виджетом — не трогаем
       if (input && input.value && input.value.trim().length > 1) {
         nameFilled = true;
       } else if (input && !nameFilled) {
@@ -84,6 +104,8 @@
           return;
         }
       }
+
+      // 3. «Присоединиться» — жмём, пока форма не исчезнет
       if (join && clicks < 40) {
         clicks++;
         AL.realClick(join);
@@ -91,6 +113,8 @@
           AL.log('info', 'Нажимаю «' + AL.label(join) + '» (попытка ' + clicks + ')');
         return;
       }
+
+      // 4. Формы входа нет. Если видны элементы трансляции, мы уже внутри.
       if (!input && !join) {
         settled++;
         if (settled >= 3 && inRoom())
@@ -99,6 +123,8 @@
         settled = 0;
       }
     }
+
+    // опрос + реакция на перерисовку
     timer = setInterval(tick, 500);
     try {
       observer = new MutationObserver(tick);

@@ -1,4 +1,4 @@
-﻿package ical
+package ical
 
 import (
 	"regexp"
@@ -24,7 +24,6 @@ var moscow = func() *time.Location {
 }()
 
 var tzidRe = regexp.MustCompile(`TZID=([^;:]+)`)
-
 
 func parseDateTime(value, params string) (time.Time, bool) {
 	v := strings.TrimSpace(value)
@@ -64,9 +63,7 @@ type rawEvent struct {
 	exdates []prop
 }
 
-
 func Parse(ics string, from, to time.Time) []Lesson {
-
 	var lines []string
 	for _, raw := range strings.Split(strings.ReplaceAll(ics, "\r\n", "\n"), "\n") {
 		if (strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t")) && len(lines) > 0 {
@@ -75,7 +72,6 @@ func Parse(ics string, from, to time.Time) []Lesson {
 			lines = append(lines, raw)
 		}
 	}
-
 
 	var events []*rawEvent
 	var cur *rawEvent
@@ -109,7 +105,6 @@ func Parse(ics string, from, to time.Time) []Lesson {
 			cur.props[name] = prop{params, value}
 		}
 	}
-
 
 	var result []Lesson
 	for _, ev := range events {
@@ -147,7 +142,6 @@ func Parse(ics string, from, to time.Time) []Lesson {
 			}
 			continue
 		}
-
 
 		intervalDays, count := 7, -1
 		var until time.Time
@@ -193,4 +187,3 @@ func Parse(ics string, from, to time.Time) []Lesson {
 	sort.Slice(result, func(i, j int) bool { return result[i].Start.Before(result[j].Start) })
 	return result
 }
-

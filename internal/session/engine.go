@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package session
 
@@ -53,21 +53,21 @@ const escoProbeScript = `
       var st = getComputedStyle(el);
       return st.visibility !== 'hidden' && st.display !== 'none' && st.opacity !== '0';
     };
-
+    // 1. имя: самый правый элемент в шапке, ниже могут быть преподаватели
     var nameRe = /^[А-ЯЁ][а-яё-]{1,30}\s+(?:[А-ЯЁ]\.\s?[А-ЯЁ]?\.?|[А-ЯЁ][а-яё]{1,20})$/;
     var name = '', nameX = -1;
     var nodes = document.querySelectorAll('a, button, span, div, p, li');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      if (el.children.length > 2) continue;
+      if (el.children.length > 2) continue;                 // только «листья»
       var t = (el.innerText || '').replace(/\s+/g, ' ').trim();
       if (t.length < 4 || t.length > 40 || !nameRe.test(t)) continue;
       if (!vis(el)) continue;
       var r = el.getBoundingClientRect();
-      if (r.top > 150) continue;
+      if (r.top > 150) continue;                            // не шапка
       if (r.left > nameX) { name = t; nameX = r.left; }
     }
-
+    // 2. Кнопка входа: если она на экране, значит сессии нет.
     var login = false;
     var clickable = document.querySelectorAll('a, button, [role="button"]');
     for (var j = 0; j < clickable.length && !login; j++) {
@@ -78,7 +78,6 @@ const escoProbeScript = `
            result: name && !login ? 'IN' : (login ? 'OUT' : 'UNKNOWN'), name: name });
   } catch (e) { post({ type: 'esco', host: location.hostname, result: 'UNKNOWN', name: '' }); }
 })();`
-
 
 type Engine struct {
 	view     *webview.View
@@ -130,7 +129,6 @@ type Engine struct {
 	OnPageLog          func(level, message string)
 }
 
-
 func New(view, auth *webview.View, h *hub.Hub, n *notify.Notifier, scripts string, dispatch func(func())) *Engine {
 	e := &Engine{view: view, auth: auth, hub: h, notifier: n, dispatch: dispatch, antiAfk: true, volume: 100}
 	e.sm = state.New(func(prev, cur state.Engine) {
@@ -165,7 +163,6 @@ func (e *Engine) CurrentTitle() string {
 }
 func (e *Engine) AttendanceDone() bool { e.mu.Lock(); defer e.mu.Unlock(); return e.attendanceDone }
 
-
 func (e *Engine) Seconds() int64 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -174,7 +171,6 @@ func (e *Engine) Seconds() int64 {
 	}
 	return int64(time.Since(e.startedAt).Seconds())
 }
-
 
 func (e *Engine) pushState() {
 	e.mu.Lock()
@@ -199,16 +195,14 @@ func (e *Engine) SetVolume(v int) {
 }
 func (e *Engine) setScan(on bool) { e.mu.Lock(); e.scanEnabled = on; e.mu.Unlock(); e.pushState() }
 
-
 func (e *Engine) Start(raw string) {
 	u := strings.TrimSpace(raw)
-	if !strings.HasPrefix(u, "http:
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 		if e.OnError != nil {
-			e.OnError("Ссылка на трансляцию должна начинаться с http:
+			e.OnError("Ссылка на трансляцию должна начинаться с http:// или https://")
 		}
 		return
 	}
-
 	e.mu.Lock()
 	same := e.currentURL == u
 	e.mu.Unlock()
@@ -240,7 +234,6 @@ func (e *Engine) onNavigated(ok bool, status uint32) {
 		return
 	}
 	if !ok {
-
 		if status == webview.ErrOperationCanceled || status == webview.ErrConnectionAborted {
 			logger.Debugf(src, "Навигация отменена (код %d) — жду следующую", status)
 			return
@@ -288,7 +281,6 @@ func (e *Engine) onJoined(title string) {
 	u, t := e.currentURL, e.currentTitle
 	e.mu.Unlock()
 
-
 	if e.sm.State() == state.Starting {
 		e.sm.Transition(state.StreamActive)
 	}
@@ -303,7 +295,6 @@ func (e *Engine) onJoined(title string) {
 		e.OnTitle(t)
 	}
 }
-
 
 func (e *Engine) Stop() {
 	if !e.sm.Active() {
@@ -334,13 +325,11 @@ func (e *Engine) Stop() {
 	}
 }
 
-
 func (e *Engine) ResumeScanning() {
 	if e.sm.State() == state.ManualIntervention {
 		e.sm.Transition(state.Scanning)
 	}
 }
-
 
 func (e *Engine) PublishStatus() {
 	browser := "READY"
@@ -349,7 +338,6 @@ func (e *Engine) PublishStatus() {
 	}
 	e.hub.SendCurrentStatus(e.sm.State().Name(), browser)
 }
-
 
 func (e *Engine) HandleHubCommand(msg map[string]any) {
 	switch msg["type"] {
@@ -425,7 +413,6 @@ func allowedDomain(u string) bool {
 	return allowedHost(p.Hostname())
 }
 
-
 func allowedHost(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
@@ -468,7 +455,6 @@ func (e *Engine) validate(u string) {
 	e.validating, e.validateURL, e.authMode = true, u, "validate"
 	e.validateTimer = time.AfterFunc(6*time.Second, func() {
 		e.dispatch(func() {
-
 			logger.Infof("Отметка", "Осечка: токен не принят, но сессия авторизована")
 			e.finishValidation(proto.TokenRetry)
 		})
@@ -524,7 +510,6 @@ func (e *Engine) onAuthNavigated(ok bool, status uint32) {
 			e.finishEscoProbe(false, "", true)
 			return
 		}
-
 		time.AfterFunc(1200*time.Millisecond, func() {
 			e.dispatch(func() {
 				e.mu.Lock()
@@ -545,7 +530,6 @@ func (e *Engine) onAuthMessage(text string) {
 	}
 	if m["type"] == "esco" {
 		name, _ := m["name"].(string)
-
 		if host, _ := m["host"].(string); !allowedHost(host) {
 			logger.Debugf("ЕСКО", "Ответ проверки пришёл с чужого домена %q — игнорирую", host)
 			e.finishEscoProbe(false, "", true)
@@ -555,7 +539,6 @@ func (e *Engine) onAuthMessage(text string) {
 		loggingIn := e.authMode == "login"
 		e.mu.Unlock()
 		if loggingIn {
-
 			if m["result"] == "IN" {
 				e.mu.Lock()
 				e.escoKnown, e.escoOK, e.escoName = true, true, name
@@ -573,7 +556,6 @@ func (e *Engine) onAuthMessage(text string) {
 		case "OUT":
 			e.finishEscoProbe(false, "", false)
 		default:
-
 			e.finishEscoProbe(false, "", true)
 		}
 		return
@@ -615,7 +597,6 @@ func (e *Engine) finishValidation(status string) {
 	case proto.TokenSuccess:
 		e.mu.Lock()
 		e.attendanceDone = true
-
 		e.escoKnown, e.escoOK = true, true
 		e.mu.Unlock()
 		e.hub.SendTokenResult(status, "Успешная отметка!")
@@ -647,12 +628,10 @@ func (e *Engine) finishValidation(status string) {
 		e.hub.SendTokenResult(status, "Таймаут при проверке отметки. Повторите позже.")
 	}
 
-
 	if e.OnAttendance != nil {
 		e.OnAttendance(status, attendanceText(status))
 	}
 }
-
 
 func attendanceText(status string) string {
 	switch status {
@@ -669,7 +648,6 @@ func attendanceText(status string) string {
 	}
 }
 
-
 func (e *Engine) CheckEsco(u string) {
 	e.mu.Lock()
 	if e.authMode != "" || e.validating {
@@ -680,7 +658,6 @@ func (e *Engine) CheckEsco(u string) {
 	if e.escoTimer != nil {
 		e.escoTimer.Stop()
 	}
-
 	e.escoTimer = time.AfterFunc(15*time.Second, func() {
 		e.dispatch(func() { e.finishEscoProbe(false, "", true) })
 	})
@@ -690,13 +667,11 @@ func (e *Engine) CheckEsco(u string) {
 	e.auth.Navigate(u)
 }
 
-
 func (e *Engine) EscoStatus() (known, ok bool, name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.escoKnown, e.escoOK, e.escoName
 }
-
 
 func (e *Engine) finishEscoProbe(ok bool, name string, timeout bool) {
 	e.mu.Lock()
@@ -729,7 +704,6 @@ func (e *Engine) finishEscoProbe(ok bool, name string, timeout bool) {
 	}
 }
 
-
 func (e *Engine) BeginLogin(u string) {
 	e.cancelValidation()
 	e.mu.Lock()
@@ -741,7 +715,6 @@ func (e *Engine) BeginLogin(u string) {
 	if e.loginPoll != nil {
 		e.loginPoll.Stop()
 	}
-
 	e.loginPoll = time.NewTicker(2 * time.Second)
 	ticker := e.loginPoll
 	e.mu.Unlock()
@@ -760,7 +733,6 @@ func (e *Engine) BeginLogin(u string) {
 	e.auth.Navigate(u)
 }
 
-
 func (e *Engine) EndLogin() {
 	e.mu.Lock()
 	e.authMode = ""
@@ -773,6 +745,4 @@ func (e *Engine) EndLogin() {
 	e.ResumeScanning()
 }
 
-
 func (e *Engine) AuthView() *webview.View { return e.auth }
-

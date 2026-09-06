@@ -19,7 +19,6 @@ $size = [math]::Round((Get-Item dist\autolectures.exe).Length / 1MB, 1)
 Write-Host "Готово: dist\autolectures.exe ($size МБ)"
 
 if ($Zip) {
-    # не $zip: совпадёт с параметром -Zip
     $zipPath = "dist\autolectures-windows-x64.zip"
     if (Test-Path $zipPath) { Remove-Item $zipPath }
     Compress-Archive -Path dist\autolectures.exe -DestinationPath $zipPath

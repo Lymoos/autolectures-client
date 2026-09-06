@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 
 package win
 
@@ -55,7 +55,6 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	return w.handle(msg, wp, lp)
 }
 
-
 func New(title string, width, height int32, iconPNG []byte) *Window {
 	runtime.LockOSThread()
 	w := &Window{border: 6}
@@ -89,7 +88,6 @@ func New(title string, width, height int32, iconPNG []byte) *Window {
 	return w
 }
 
-
 func (w *Window) ApplyChrome(transparent bool) bool {
 	DwmSet(w.HWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
 	DwmSet(w.HWnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
@@ -99,7 +97,6 @@ func (w *Window) ApplyChrome(transparent bool) bool {
 			w.transparent = true
 			return true
 		}
-
 		DwmExtendFrame(w.HWnd, MARGINS{1, 1, 1, 1})
 	}
 	w.transparent = false
@@ -107,13 +104,11 @@ func (w *Window) ApplyChrome(transparent bool) bool {
 	return false
 }
 
-
 func (w *Window) CreateChild() uintptr {
 	h, _, _ := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(w.childCls)), 0,
 		WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_CLIPCHILDREN, 0, 0, 10, 10, w.HWnd, 0, GetModuleHandle(), 0)
 	return h
 }
-
 
 func PlaceChild(child uintptr, x, y, width, height int32, visible bool) {
 	flags := uint32(SWP_NOACTIVATE | SWP_NOCOPYBITS)
@@ -125,7 +120,6 @@ func PlaceChild(child uintptr, x, y, width, height int32, visible bool) {
 		ShowWindow(child, SW_HIDE)
 	}
 }
-
 
 func (w *Window) Border() int32 {
 	if IsZoomed(w.HWnd) {
@@ -151,18 +145,14 @@ func (w *Window) ToggleMaximize() {
 func (w *Window) Visible() bool   { return IsWindowVisible(w.HWnd) && !IsIconic(w.HWnd) }
 func (w *Window) Minimized() bool { return IsIconic(w.HWnd) }
 
-
 func (w *Window) BeginDrag() {
 	ReleaseCapture()
 	SendMessage(w.HWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0)
 }
 
-
 func (w *Window) Close() { PostMessage(w.HWnd, WM_CLOSE, 0, 0) }
 
-
 func (w *Window) Quit() { PostMessage(w.HWnd, WM_DESTROY, 0, 0) }
-
 
 func (w *Window) Dispatch(fn func()) {
 	w.queueMu.Lock()
@@ -170,7 +160,6 @@ func (w *Window) Dispatch(fn func()) {
 	w.queueMu.Unlock()
 	PostMessage(w.HWnd, WM_APP_DISPATCH, 0, 0)
 }
-
 
 func (w *Window) Run() {
 	var msg MSG
@@ -197,10 +186,8 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		return 0
 
 	case WM_NCCALCSIZE:
-
 		if wp != 0 {
 			if IsZoomed(w.HWnd) {
-
 				p := (*NCCALCSIZE_PARAMS)(unsafe.Pointer(lp))
 				frame := GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER)
 				p.Rgrc[0].Left += frame
@@ -246,7 +233,6 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		return 0
 
 	case WM_ERASEBKGND:
-
 		if !w.transparent {
 			FillClient(w.HWnd, wp, 0x141414)
 		}
@@ -267,7 +253,6 @@ func (w *Window) handle(msg uint32, wp, lp uintptr) uintptr {
 		}
 
 	case WM_NCACTIVATE:
-
 		return DefWindowProc(w.HWnd, msg, wp, ^uintptr(0))
 
 	case WM_DPICHANGED:
@@ -329,7 +314,6 @@ func (w *Window) trayData(tip string) NOTIFYICONDATA {
 	return d
 }
 
-
 func (w *Window) AddTray(tip string, items []struct {
 	ID    int
 	Title string
@@ -347,7 +331,6 @@ func (w *Window) AddTray(tip string, items []struct {
 	w.trayAdded = true
 }
 
-
 func (w *Window) SetTrayItemTitle(id int, title string) {
 	for i := range w.menuItems {
 		if w.menuItems[i].id == id {
@@ -355,7 +338,6 @@ func (w *Window) SetTrayItemTitle(id int, title string) {
 		}
 	}
 }
-
 
 func (w *Window) RemoveTray() {
 	if !w.trayAdded {
@@ -382,7 +364,6 @@ func (w *Window) showTrayMenu() {
 	PostMessage(w.HWnd, WM_NULL, 0, 0)
 	_, _, _ = pDestroyMenu.Call(menu)
 }
-
 
 func ParseHotKey(seq string) (mods, vk uint32, ok bool) {
 	parts := strings.Split(seq, "+")
@@ -433,4 +414,3 @@ func ParseHotKey(seq string) (mods, vk uint32, ok bool) {
 	}
 	return mods | MOD_NOREPEAT, vk, vk != 0
 }
-

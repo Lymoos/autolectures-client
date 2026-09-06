@@ -1,4 +1,4 @@
-﻿package logger
+package logger
 
 import (
 	"fmt"
@@ -112,4 +112,3 @@ func HistoryText() string {
 	}
 	return string(b)
 }
-

@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 type Eco struct {
 	enabled, sessionActive, userEntered, windowVisible, previewTab bool
@@ -54,4 +54,3 @@ func (e *Eco) recompute() {
 		e.OnChange(low)
 	}
 }
-

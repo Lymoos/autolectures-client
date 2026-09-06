@@ -1,4 +1,4 @@
-﻿package mailmon
+package mailmon
 
 import (
 	"context"
@@ -32,9 +32,7 @@ type Monitor struct {
 	OnError      func(text string)
 }
 
-
 func New() *Monitor { return &Monitor{} }
-
 
 func (m *Monitor) SetSettings(s config.Mail) {
 	m.mu.Lock()
@@ -42,13 +40,11 @@ func (m *Monitor) SetSettings(s config.Mail) {
 	m.mu.Unlock()
 }
 
-
 func (m *Monitor) Running() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.running
 }
-
 
 func (m *Monitor) Start() {
 	m.mu.Lock()
@@ -88,7 +84,6 @@ func (m *Monitor) Start() {
 	}()
 }
 
-
 func (m *Monitor) Stop() {
 	m.mu.Lock()
 	if !m.running {
@@ -107,7 +102,6 @@ func (m *Monitor) Stop() {
 	}
 }
 
-
 func (m *Monitor) CheckNow() {
 	m.mu.Lock()
 	running := m.running
@@ -116,7 +110,6 @@ func (m *Monitor) CheckNow() {
 		go m.check(context.Background())
 	}
 }
-
 
 func (m *Monitor) Test(s config.Mail) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
@@ -210,11 +203,9 @@ func (m *Monitor) fetchNew(ctx context.Context, s config.Mail) error {
 
 	lastUID := config.Get().MailLastUID()
 	criteria := &imap.SearchCriteria{
-
 		Header: []imap.SearchCriteriaHeaderField{{Key: "From", Value: s.SenderFilter()}},
 	}
 	if lastUID == 0 {
-
 		criteria.Since = time.Now().AddDate(0, 0, -7)
 	} else {
 		criteria.UID = []imap.UIDSet{{imap.UIDRange{Start: imap.UID(lastUID + 1), Stop: 0}}}
@@ -272,4 +263,3 @@ func (m *Monitor) fetchNew(ctx context.Context, s config.Mail) error {
 	_ = c.Logout().Wait()
 	return nil
 }
-

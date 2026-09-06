@@ -1,7 +1,9 @@
-﻿(function () {
+// mediadiag.js — диагностика медиа: поддержка кодеков и состояние.
+(function () {
   var AL = window.__AL;
-  if (!AL) return;   
+  if (!AL) return;   // не главный фрейм
   if (!/^https?:$/.test(location.protocol)) return;
+
   AL.onReady(function () {
     var probe = document.createElement('video');
     function mse(type) {
@@ -13,11 +15,12 @@
     try {
       var caps = RTCRtpSender.getCapabilities('video');
       rtcH264 = !!(caps && caps.codecs.some(function (c) { return /h26\d/i.test(c.mimeType || ''); }));
-    } catch (e) {  }
+    } catch (e) { /* нет WebRTC */ }
     AL.log(h264 && aac && rtcH264 ? 'info' : 'error',
       'Кодеки: MSE H.264 ' + (h264 ? 'да' : 'НЕТ') + ', AAC ' + (aac ? 'да' : 'НЕТ')
       + ', WebRTC H.264 ' + (rtcH264 ? 'да' : 'НЕТ')
       + ', HLS «' + (probe.canPlayType('application/vnd.apple.mpegurl') || 'нет') + '»');
+
     var count = 0, last = '';
     function report() {
       var vids = document.querySelectorAll('video');
@@ -30,7 +33,7 @@
       var line = 'Медиа: video ' + vids.length + (parts.length ? ' (' + parts.join('; ') + ')' : '')
         + ', iframe ' + document.querySelectorAll('iframe').length;
       count++;
-      if (count > 4 && line === last) return;   
+      if (count > 4 && line === last) return;   // молчим, пока состояние не меняется
       last = line;
       AL.log('debug', line);
     }

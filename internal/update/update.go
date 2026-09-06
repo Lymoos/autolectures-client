@@ -1,4 +1,4 @@
-﻿package update
+package update
 
 import (
 	"archive/zip"
@@ -24,10 +24,9 @@ import (
 const (
 	src         = "Обновление"
 	repo        = "Lymoos/autolectures-client"
-	releasesURL = "https:
+	releasesURL = "https://api.github.com/repos/" + repo + "/releases/latest"
 	platformKey = "windows-x64"
 )
-
 
 type Updater struct {
 	http    *http.Client
@@ -47,7 +46,6 @@ type Updater struct {
 	OnRestart  func()
 }
 
-
 func New(h *http.Client, version, dataDir string) *Updater {
 	return &Updater{http: h, version: version, dataDir: dataDir}
 }
@@ -55,7 +53,6 @@ func New(h *http.Client, version, dataDir string) *Updater {
 func (u *Updater) Current() string { return u.version }
 func (u *Updater) Latest() string  { u.mu.Lock(); defer u.mu.Unlock(); return u.latest }
 func (u *Updater) Available() bool { u.mu.Lock(); defer u.mu.Unlock(); return u.available }
-
 
 func CompareVersions(a, b string) int {
 	parts := func(v string) [3]int {
@@ -103,7 +100,6 @@ func (u *Updater) get(url string, accept string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 200<<20))
 }
 
-
 func (u *Updater) Check() { u.checkReleases() }
 
 func (u *Updater) checkReleases() {
@@ -149,7 +145,6 @@ func (u *Updater) checkReleases() {
 		u.OnFound(latest, rel.Body)
 	}
 }
-
 
 func (u *Updater) DownloadAndInstall() {
 	u.mu.Lock()
@@ -203,7 +198,6 @@ func (u *Updater) DownloadAndInstall() {
 	if u.OnProgress != nil {
 		u.OnProgress(95)
 	}
-
 	helper := filepath.Join(staging, "apply-"+latest+".exe")
 	if err := copyFile(self, helper); err != nil {
 		fail("Не удалось подготовить модуль обновления: " + err.Error())
@@ -254,7 +248,6 @@ func copyFile(from, to string) error {
 	return os.WriteFile(to, data, 0o755)
 }
 
-
 func Apply(args []string) int {
 	if len(args) < 3 {
 		return 2
@@ -298,8 +291,6 @@ func processAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-
 	_ = p.Release()
 	return true
 }
-

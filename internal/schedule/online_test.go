@@ -1,4 +1,4 @@
-﻿package schedule
+package schedule
 
 import (
 	"testing"
@@ -18,7 +18,7 @@ func TestIsOnline(t *testing.T) {
 		{"", "", "ПР Математический анализ", false},
 		{"Онлайн", "", "Семинар", true},
 		{"Дистанционно", "", "", true},
-		{"Актовый зал", "ссылка: https:
+		{"Актовый зал", "ссылка: https://my.mts-link.ru/j/1", "Конференция", true},
 	}
 	for _, c := range cases {
 		got := IsOnline(ical.Lesson{Location: c.loc, Description: c.desc, Title: c.title})
@@ -69,4 +69,3 @@ func TestKeepEntry(t *testing.T) {
 		}
 	}
 }
-

@@ -1,4 +1,4 @@
-﻿package proto
+package proto
 
 const ProtocolVersion = 2
 
@@ -28,7 +28,6 @@ const (
 	C2SLinkUpsert    = "LINK_UPSERT"
 )
 
-
 const (
 	S2CAuthOk          = "AUTH_OK"
 	S2CAuthError       = "AUTH_ERROR"
@@ -39,7 +38,6 @@ const (
 	S2CSettingsUpdated = "SETTINGS_UPDATED"
 )
 
-
 const (
 	TokenSuccess   = "SUCCESS"
 	TokenNeedsAuth = "NEEDS_AUTH"
@@ -47,7 +45,6 @@ const (
 	TokenTimeout   = "TIMEOUT"
 	TokenError     = "ERROR"
 )
-
 
 const (
 	EventLectureStarted    = "LECTURE_STARTED"
@@ -61,7 +58,6 @@ const (
 	EventSessionError      = "SESSION_ERROR"
 )
 
-
 const (
 	LinkPending = "PENDING"
 	LinkLive    = "LIVE"
@@ -69,4 +65,3 @@ const (
 	LinkMissed  = "MISSED"
 	LinkDone    = "DONE"
 )
-
