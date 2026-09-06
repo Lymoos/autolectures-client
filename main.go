@@ -10,7 +10,7 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/update"
 )
 
-var Version = "1.0.1"
+var Version = "1.0.2"
 
 var webFS embed.FS
 
