@@ -66,7 +66,8 @@
         <div class="caption mt">Авторизация</div>
         <div class="auth" id="auth-block">
           <button class="btn ghost auth-btn" id="btn-telegram" title="Привязать Telegram-бота: команды и уведомления"><span class="ico ico-telegram"></span><span id="telegram-label">Telegram</span><span class="dot" id="dot-telegram"></span></button>
-          <button class="btn ghost auth-btn" id="btn-esco" title="Войти в единую систему МИРЭА для автоматической отметки"><span class="ico ico-esco"></span><span id="esco-label">МИРЭА</span><span class="dot" id="dot-esco"></span></button>
+          <button class="btn ghost auth-btn" id="btn-esco" title="Вход в МИРЭА Пульс: нужен для автоматической отметки по QR-коду"><span class="ico ico-esco"></span><span id="esco-label">МИРЭА Пульс</span><span class="dot" id="dot-esco"></span></button>
+          <button class="btn ghost auth-btn" id="btn-sdo-login" title="Вход в СДО МИРЭА: оттуда берутся ссылки на лекции"><span class="ico ico-book"></span><span id="sdo-label">МИРЭА СДО</span><span class="dot" id="dot-sdo"></span></button>
           <button class="btn ghost auth-btn" id="btn-mail" title="Подключить почту для автоматического разбора приглашений MTS-Link"><span class="ico ico-mail"></span><span>Почта</span><span class="dot" id="dot-mail"></span></button>
         </div>
 
@@ -78,6 +79,11 @@
             </label>
             <div class="dim" id="mail-status">Мониторинг выключен</div>
           </div>
+        </div>
+
+        <div class="today hidden" id="today">
+          <div class="caption mt">Сегодня</div>
+          <div class="today-list" id="today-list"></div>
         </div>
 
         <div class="spacer"></div>
@@ -172,8 +178,37 @@
           <label class="admin-field">Сервер синхронизации<input type="text" id="set-server" placeholder="http://host:8000" title="Адрес сервера аккаунтов, синхронизации и Telegram-бота"></label>
           <div class="dim">Служебные действия для проверки клиента «с нуля».</div>
           <button class="btn ghost" id="btn-onboard">Пройти обучение заново</button>
+          <button class="btn ghost" id="btn-diag" title="Записать в журнал, какие кнопки и счётчики клиент видит на открытой трансляции">Что клиент видит на трансляции</button>
           <button class="btn danger" id="btn-reset" title="Удалить конфиг, вход, почту, расписание и профиль браузера, затем перезапустить клиент">Снести все данные и перезапустить</button>
           <div class="err hidden" id="admin-err"></div>
+        </div>
+      </div>
+
+      <!-- Курс в СДО для предмета -->
+      <div class="dlg hidden" id="dlg-sdo">
+        <div class="dlg-head"><span class="title">Курс в СДО</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
+        <div class="muted">Укажите страницу курса в СДО МИРЭА для предмета <b id="sdo-subject"></b>. Когда начнётся пара, клиент откроет раздел «Вебинары», найдёт в таблице строку своей группы на нужное время и нажмёт «Подключиться» — «Смотреть запись» он не трогает. Ссылка сохраняется для всех занятий этого предмета.</div>
+        <div class="form">
+          <label>Страница курса<input type="text" id="sdo-url" placeholder="https://online-edu.mirea.ru/course/view.php?id=…" spellcheck="false"></label>
+        </div>
+        <div class="err hidden" id="sdo-err"></div>
+        <div class="dim hidden" id="sdo-from-preset">Ссылка получена из пресета группы. Впишете свою — она будет важнее.</div>
+        <div class="admin hidden" id="sdo-admin">
+          <div class="caption">Администратор</div>
+          <div class="dim" id="sdo-preset-info"></div>
+          <div class="preset-row">
+            <button class="btn ghost" id="btn-preset-save">Сохранить пресет группы</button>
+            <button class="btn subtle" id="btn-preset-load" title="Забрать пресет с сервера заново">Обновить</button>
+            <button class="btn subtle danger-text" id="btn-preset-del" title="Удалить пресет группы на сервере">Удалить</button>
+          </div>
+          <div class="dim">Прогнать поиск прямо сейчас, не дожидаясь начала пары: клиент пройдёт весь путь и покажет, что нашёл. Ссылка при этом не подставляется и подключения не будет.</div>
+          <button class="btn ghost" id="btn-sdo-check">Проверить поиск сейчас</button>
+          <pre class="report hidden" id="sdo-report"></pre>
+        </div>
+        <div class="dlg-actions">
+          <button class="btn subtle hidden" id="btn-sdo-clear">Убрать</button>
+          <span class="spacer"></span>
+          <button class="btn primary" id="btn-sdo-save">Сохранить</button>
         </div>
       </div>
 
@@ -194,30 +229,58 @@
       <!-- Почта -->
       <div class="dlg hidden" id="dlg-mail">
         <div class="dlg-head"><span class="title">Почта</span><span class="spacer"></span><button class="icon-btn" data-close title="Закрыть"><span class="ico ico-close"></span></button></div>
-        <div class="muted">Клиент читает письма по IMAP и добавляет ссылки на лекции в расписание. По умолчанию разбираются письма со всего домена <b>mts-link.ru</b> — приглашения и напоминания; для проверки можно указать любой другой адрес. Для Mail.ru, Яндекса и Gmail нужен <b>пароль приложения</b>, а не основной пароль.</div>
-        <div class="form">
-          <label>Сервер IMAP<input type="text" id="mail-host" placeholder="imap.mail.ru / imap.yandex.ru / imap.gmail.com"></label>
-          <label>Порт<input type="number" id="mail-port" value="993" min="1" max="65535"></label>
-          <div class="field-col" title="993 — соединение сразу зашифровано. 143 — открытое соединение с переходом на TLS командой STARTTLS: так работает почта МИРЭА.">
-            <span>Шифрование</span>
-            <div class="select" id="mail-sec" data-value="">
-              <button type="button" class="select-btn"><span class="select-label">Автоматически — по порту</span><span class="ico ico-chevron"></span></button>
-              <div class="select-list hidden">
-                <button type="button" class="select-opt active" data-value="">Автоматически — по порту</button>
-                <button type="button" class="select-opt" data-value="ssl">SSL/TLS — обычно порт 993</button>
-                <button type="button" class="select-opt" data-value="starttls">STARTTLS — обычно порт 143</button>
+
+        <!-- Ящик уже подключён: настраивать нечего -->
+        <div class="hidden" id="mail-linked">
+          <div class="linked">
+            <span class="ico ico-mail"></span>
+            <div class="linked-text">
+              <div class="linked-title">Почта <b id="mail-linked-user"></b> подключена</div>
+              <div class="dim">Приём писем от <b id="mail-linked-sender"></b></div>
+            </div>
+            <span class="dot on"></span>
+          </div>
+          <div class="dim" id="mail-linked-status"></div>
+          <div class="dlg-actions">
+            <button class="btn subtle" id="btn-mail-disconnect" title="Удалить данные почты с этого ПК">Отключить</button>
+            <span class="spacer"></span>
+          </div>
+        </div>
+
+        <!-- Настройка ящика -->
+        <div id="mail-setup">
+          <div class="muted">Клиент читает письма по IMAP и добавляет ссылки на лекции в расписание. По умолчанию разбираются письма от <b>invitation@mts-link.ru</b>. Для Mail.ru, Яндекса и Gmail нужен <b>пароль приложения</b>, а не основной пароль.</div>
+          <div class="caption mt">Готовые настройки</div>
+          <div class="presets">
+            <button class="btn ghost preset" data-preset="yandex" title="Готовые параметры Яндекс Почты. Нажмите ещё раз, чтобы вписать свои."><span class="preset-main"><span class="ico ico-yandex"></span><span>Яндекс Почта</span></span></button>
+            <button class="btn ghost preset soon" data-preset="gmail" disabled><span class="preset-main"><span class="ico ico-gmail"></span><span>Gmail</span></span><span class="soon-label">Пока не доступно</span></button>
+            <button class="btn ghost preset soon" data-preset="mailru" disabled><span class="preset-main"><span class="ico ico-mailru"></span><span>Mail.ru</span></span><span class="soon-label">Пока не доступно</span></button>
+            <button class="btn ghost preset soon" data-preset="mirea" disabled><span class="preset-main"><span class="ico ico-esco"></span><span>Почта МИРЭА</span></span><span class="soon-label">Пока не доступно</span></button>
+          </div>
+          <div class="dim mail-help">Нужна помощь с настройкой IMAP в Яндекс Почте? <button type="button" class="linklike" id="mail-help-link">Откройте инструкцию</button></div>
+          <div class="form">
+            <label>Сервер IMAP<input type="text" id="mail-host" placeholder="imap.yandex.ru"></label>
+            <label>Порт<input type="number" id="mail-port" value="993" min="1" max="65535"></label>
+            <div class="field-col" title="993 — соединение сразу зашифровано. 143 — открытое соединение с переходом на TLS командой STARTTLS.">
+              <span>Шифрование</span>
+              <div class="select" id="mail-sec" data-value="">
+                <button type="button" class="select-btn"><span class="select-label">Автоматически — по порту</span><span class="ico ico-chevron"></span></button>
+                <div class="select-list hidden">
+                  <button type="button" class="select-opt active" data-value="">Автоматически — по порту</button>
+                  <button type="button" class="select-opt" data-value="ssl">SSL/TLS — обычно порт 993</button>
+                  <button type="button" class="select-opt" data-value="starttls">STARTTLS — обычно порт 143</button>
+                </div>
               </div>
             </div>
+            <label>Логин<input type="text" id="mail-user" placeholder="student@yandex.ru"></label>
+            <label>Пароль<input type="password" id="mail-pass" placeholder="Пароль приложения"></label>
+            <label title="Чьи письма разбирать: домен целиком или конкретный адрес. Для проверки можно указать свою почту и отправить письмо самому себе.">Разбирать письма от<input type="text" id="mail-sender" placeholder="invitation@mts-link.ru"></label>
           </div>
-          <label>Логин<input type="text" id="mail-user" placeholder="student@mail.ru"></label>
-          <label>Пароль<input type="password" id="mail-pass" placeholder="Пароль приложения"></label>
-          <label title="Чьи письма разбирать: домен целиком или конкретный адрес. Для проверки можно указать свою почту и отправить письмо самому себе.">Разбирать письма от<input type="text" id="mail-sender" placeholder="mts-link.ru"></label>
-        </div>
-        <div class="msg hidden" id="mail-msg"></div>
-        <div class="dlg-actions">
-          <button class="btn subtle" id="btn-mail-disconnect" title="Удалить данные почты с этого ПК">Отключить</button>
-          <span class="spacer"></span>
-          <button class="btn primary" id="btn-mail-connect">Проверить и подключить</button>
+          <div class="msg hidden" id="mail-msg"></div>
+          <div class="dlg-actions">
+            <span class="spacer"></span>
+            <button class="btn primary" id="btn-mail-connect">Проверить и подключить</button>
+          </div>
         </div>
       </div>
 

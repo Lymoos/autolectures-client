@@ -44,8 +44,12 @@ type Entry struct {
 	SecondsInside int64     `json:"seconds_inside"`
 	MarkedAt      string    `json:"marked_at"`
 	LinkAsked     bool      `json:"link_asked,omitempty"`
-	autoStarted   bool
-	linkWaiting   bool
+	// Отметка по QR была, но не прошла: не авторизованы в ЕСКО, осечка, таймаут.
+	Failed bool `json:"failed,omitempty"`
+	// Пропуск уже отправлен на сервер — второй раз не шлём.
+	MissSent    bool `json:"miss_sent,omitempty"`
+	autoStarted bool
+	linkWaiting bool
 }
 
 func (e *Entry) sync() {
@@ -104,6 +108,7 @@ type Scheduler struct {
 	OnAutoStop    func()
 	OnLinkWait    func(title string)
 	OnLinkMissing func(title string, start time.Time)
+	OnMissed      func(e Entry)
 }
 
 func New(h *http.Client) *Scheduler {
@@ -592,6 +597,56 @@ func (s *Scheduler) ApplyRemote(links []json.RawMessage) {
 	s.mu.Unlock()
 }
 
+// Pending — занятия, которым нужна ссылка: по ним и пойдёт поиск в СДО и
+// почте. Отдаём ближайшие, у которых ссылки ещё нет и время не ушло.
+func (s *Scheduler) Pending(within time.Duration) []Entry {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Entry
+	for _, e := range s.entries {
+		if e.URL != "" || e.Status == proto.LinkMarked || e.End.Before(now) {
+			continue
+		}
+		if within > 0 && e.Start.After(now.Add(within)) {
+			continue
+		}
+		e.sync()
+		out = append(out, e)
+	}
+	return out
+}
+
+// AttachFoundURL прикрепляет найденную ссылку к занятию. Источник виден в
+// списке лекций: «из СДО», «из почты», «вручную».
+func (s *Scheduler) AttachFoundURL(id, u, source string) bool {
+	if id == "" || u == "" {
+		return false
+	}
+	s.mu.Lock()
+	var found *Entry
+	for i := range s.entries {
+		if s.entries[i].ID == id {
+			found = &s.entries[i]
+			break
+		}
+	}
+	if found == nil || found.URL == u {
+		s.mu.Unlock()
+		return false
+	}
+	title, had := found.Title, found.URL != ""
+	found.URL, found.Source = u, source
+	s.mu.Unlock()
+	if had {
+		logger.Infof(src, "Ссылка на «%s» заменена (%s)", title, source)
+	} else {
+		logger.Infof(src, "Найдена ссылка на «%s» (%s)", title, source)
+	}
+	s.persist()
+	return true
+}
+
 // Remove убирает одно занятие из списка; занятия из официального расписания
 // вернутся при следующем обновлении, добавленные вручную — нет.
 func (s *Scheduler) Remove(id string) int {
@@ -663,15 +718,41 @@ func (s *Scheduler) OnAttendanceMarked() {
 		if s.entries[i].ID == s.activeID {
 			s.entries[i].Status = proto.LinkMarked
 			s.entries[i].MarkedAt = time.Now().Format("2006-01-02T15:04:05")
+			s.entries[i].Failed = false
 		}
 	}
 	s.mu.Unlock()
 	s.persist()
 }
 
+// OnAttendanceFailed помечает занятие: попытка отметиться была, но не удалась.
+// В списке такое видно отдельно от «просто не отметились».
+func (s *Scheduler) OnAttendanceFailed() {
+	s.mu.Lock()
+	changed := false
+	for i := range s.entries {
+		e := &s.entries[i]
+		if e.ID == s.activeID && e.Status != proto.LinkMarked && !e.Failed {
+			e.Failed = true
+			changed = true
+		}
+	}
+	s.mu.Unlock()
+	if changed {
+		s.persist()
+	}
+}
+
+// Пара считается пропущенной, если после её конца прошло время на отметку, а мы
+// пробыли внутри меньше часа и по QR не отметились.
+const (
+	missGrace = 10 * time.Minute
+	missShort = time.Hour
+)
+
 func (s *Scheduler) tick() {
 	now := time.Now()
-	var autoStart, askLink, waitLink *Entry
+	var autoStart, askLink, waitLink, missed *Entry
 	autoStop, changed, persistNeeded := false, false, false
 
 	s.mu.Lock()
@@ -693,6 +774,13 @@ func (s *Scheduler) tick() {
 		if e.Status == proto.LinkPending && !e.End.IsZero() && now.After(e.End.Add(10*time.Minute)) {
 			e.Status = proto.LinkMissed
 			persistNeeded = true
+		}
+		if !e.MissSent && missed == nil && e.Status != proto.LinkMarked && !e.End.IsZero() &&
+			now.After(e.End.Add(missGrace)) && e.SecondsInside < int64(missShort.Seconds()) {
+			e.MissSent = true
+			persistNeeded = true
+			cp := *e
+			missed = &cp
 		}
 		if s.armed && !s.sessionActive && autoStart == nil && e.URL != "" && !e.autoStarted &&
 			e.Status == proto.LinkPending && !now.Before(e.Start.Add(-time.Minute)) && now.Before(e.End) {
@@ -734,6 +822,9 @@ func (s *Scheduler) tick() {
 		if s.OnLinkMissing != nil {
 			s.OnLinkMissing(askLink.Title, askLink.Start)
 		}
+	}
+	if missed != nil && s.OnMissed != nil {
+		s.OnMissed(*missed)
 	}
 	if autoStop && s.OnAutoStop != nil {
 		s.OnAutoStop()
