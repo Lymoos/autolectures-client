@@ -28,6 +28,7 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/notify"
 	"github.com/Lymoos/autolectures/client/internal/proto"
 	"github.com/Lymoos/autolectures/client/internal/schedule"
+	"github.com/Lymoos/autolectures/client/internal/sdo"
 	"github.com/Lymoos/autolectures/client/internal/session"
 	"github.com/Lymoos/autolectures/client/internal/state"
 	"github.com/Lymoos/autolectures/client/internal/update"
@@ -38,7 +39,12 @@ import (
 const (
 	src          = "Окно"
 	escoLoginURL = "https://attendance.mirea.ru/"
-	chromeUA     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+	// СДО пускает по той же сессии, что и ЕСКО. Пока клиент только проверяет
+	// доступ: дальше отсюда будут забираться курсы и расписание лекций.
+	sdoURL = "https://online-edu.mirea.ru/"
+	// На сколько вперёд смотрим, подбирая занятия без ссылок.
+	sdoSearchHorizon = 48 * time.Hour
+	chromeUA         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 	adminLogin = "lymoos"
 
@@ -50,6 +56,7 @@ const (
 type Assets struct {
 	IndexHTML, CSS, JS string
 	Scripts            []string
+	Deko               string // картинка для «проспал лекцию», data:image/...
 }
 
 type Options struct {
@@ -78,8 +85,15 @@ type App struct {
 
 	globalSession bool
 	loginActive   bool
+	loginSystem   string
 	escoOK        bool
 	escoName      string
+	sdoOK         bool
+	sdoName       string
+	sdoCourses    []sdo.Course
+	sdoScanFor    schedule.Entry
+	search        sdoSearch
+	sdoReport     []string
 	marked        bool
 	attendStatus  string
 	attendText    string
@@ -90,17 +104,19 @@ type App struct {
 		x, y, w, h float64
 		dpr        float64
 	}
-	updating     bool
-	bootUpdate   bool
-	updNotified  string
-	needNickname bool
-	tab          int
-	mailStatus   string
-	idleHint     string
-	tgLinked     bool
-	tgUser       string
-	updProgress  int
-	updNotes     string
+	updating      bool
+	bootUpdate    bool
+	updNotified   string
+	needNickname  bool
+	micChecked    bool
+	stageWasShown bool
+	tab           int
+	mailStatus    string
+	idleHint      string
+	tgLinked      bool
+	tgUser        string
+	updProgress   int
+	updNotes      string
 }
 
 func (a *App) dispatch(fn func()) { a.wnd.Dispatch(fn) }
@@ -171,7 +187,8 @@ func Run(assets Assets, opt Options) int {
 		a.br.Emit("log", e)
 	}
 
-	html := strings.Replace(assets.IndexHTML, "/*CSS*/", assets.CSS, 1)
+	css := strings.Replace(assets.CSS, "/*DEKO*/", assets.Deko, 1)
+	html := strings.Replace(assets.IndexHTML, "/*CSS*/", css, 1)
 	html = strings.Replace(html, "/*JS*/", assets.JS, 1)
 	a.ui.NavigateHTML(html)
 	a.layout()
@@ -185,9 +202,20 @@ func Run(assets Assets, opt Options) int {
 	}
 	go a.updater.Check()
 	a.scheduleEscoCheck(6 * time.Second)
+	a.scheduleSdoCheck(30 * time.Second)
 	go func() {
 		for range time.Tick(10 * time.Minute) {
 			a.scheduleEscoCheck(0)
+		}
+	}()
+	go func() {
+		for range time.Tick(3 * time.Hour) {
+			a.scheduleSdoCheck(0)
+		}
+	}()
+	go func() {
+		for range time.Tick(sdoSearchEvery) {
+			a.dispatch(a.sdoTick)
 		}
 	}()
 	go func() {
@@ -254,6 +282,7 @@ func (a *App) wireServices() {
 		if !active {
 			a.marked = false
 			a.needNickname = false
+			a.micChecked = false
 		}
 		a.emitState()
 	}
@@ -268,6 +297,9 @@ func (a *App) wireServices() {
 	}
 	a.engine.OnAttendance = func(status, text string) {
 		a.attendStatus, a.attendText = status, text
+		if status != proto.TokenSuccess && status != proto.TokenRetry {
+			go a.scheduler.OnAttendanceFailed()
+		}
 		a.emitState()
 	}
 	a.engine.OnEscoStatus = func(ok bool, name string) {
@@ -277,16 +309,69 @@ func (a *App) wireServices() {
 		}
 		a.emitState()
 	}
-	a.engine.OnEscoLoggedIn = func(name string) {
+	a.engine.OnSdoStatus = func(ok bool, name string, courses int) {
+		a.sdoOK, a.sdoName = ok, name
+		a.emitState()
+		if ok {
+			// Вход есть — сразу забираем список курсов, дальше по нему пойдёт
+			// поиск ссылок для занятий из расписания.
+			a.trySdo(2*time.Second, 6, a.engine.ScanSdoCourses)
+		}
+	}
+	a.engine.OnSdoCourses = func(courses []sdo.Course) {
+		a.sdoCourses = courses
+		for _, c := range courses {
+			logger.Debugf("СДО", "Курс: %s → %s", c.Title, c.URL)
+		}
+		a.planSdoSearch()
+		a.emitState()
+	}
+	a.engine.OnSdoActivities = func(items []sdo.WebinarActivity, info sdo.PageInfo) { a.onSdoActivities(items, info) }
+	a.engine.OnSdoWebinars = func(rows []sdo.Webinar) { a.onSdoWebinars(rows) }
+	a.engine.OnSdoJoin = func(url string) { a.onSdoJoin(url) }
+	a.engine.OnSdoLinks = func(course string, links []sdo.Link) {
+		for _, l := range links {
+			if sdo.IsMeetingLink(l.URL) {
+				logger.Debugf("СДО", "«%s» → %s (%s)", l.Title, l.URL, l.Section)
+			}
+		}
+		want := a.sdoScanFor
+		if want.ID == "" {
+			return
+		}
+		// Дата из подписи или раздела — главный признак, что ссылка именно на
+		// это занятие, а не запись прошлой недели.
+		for i := range links {
+			links[i].When = sdo.ParseWhen(links[i].Title+" "+links[i].Section, want.Start)
+		}
+		// Ссылку пока не прикрепляем: сначала надо убедиться на живых курсах,
+		// что кандидат выбирается верно. Прикрепление — следующий шаг.
+		if best, ok := sdo.PickLink(want.Title, want.Start, links); ok {
+			logger.Infof("СДО", "Кандидат для «%s» (%s): %s — «%s» из раздела «%s»",
+				want.Title, want.Start.Format("02.01 15:04"), best.URL, best.Title, best.Section)
+		} else {
+			logger.Infof("СДО", "В курсе «%s» ссылок на встречу для «%s» не нашлось", course, want.Title)
+		}
+	}
+	a.engine.OnLoggedIn = func(system, name string) {
 		if !a.loginActive {
 			return
 		}
-		a.loginActive = false
-		a.escoOK, a.escoName = true, name
+		a.loginActive, a.loginSystem = false, ""
 		a.idleHint = ""
+		if system == "sdo" {
+			a.sdoOK, a.sdoName = true, name
+		} else {
+			a.escoOK, a.escoName = true, name
+		}
 		a.engine.EndLogin()
 		a.layout()
 		a.emitState()
+		if system == "sdo" {
+			a.trySdo(2*time.Second, 6, a.engine.ScanSdoCourses)
+		} else {
+			a.scheduleSdoCheck(3 * time.Second)
+		}
 	}
 	a.engine.OnNicknameRequired = func() {
 		if a.cfg.Nickname() != "" {
@@ -296,9 +381,44 @@ func (a *App) wireServices() {
 		logger.Warnf(src, "Форма входа просит имя участника — спрашиваю его в окне приложения")
 		a.emitState()
 	}
+	a.engine.OnMedia = func(action, kind, mic string, asked int) {
+		switch action {
+		case "denied":
+			logger.Warnf(src, "Трансляция запросила «%s» — доступ запрещён клиентом", kind)
+		case "check":
+			if asked > 0 {
+				logger.Warnf(src, "Проверка устройств: попыток захвата %d, все отклонены (разрешение: %s)", asked, mic)
+			} else if !a.micChecked {
+				a.micChecked = true
+				logger.Infof(src, "Проверка устройств: микрофон и камера недоступны странице (разрешение: %s)", mic)
+			}
+		}
+	}
+	a.engine.OnLectureOver = func(reason string, now, peak int) {
+		title := a.engine.CurrentTitle()
+		logger.Infof(src, "Отключаюсь от «%s»: %s", title, reason)
+		a.idleHint = "Лекция «" + title + "» завершилась — " + reason
+		a.notifier.Notify(proto.EventLectureStopped, "Лекция «"+title+"» закончилась: "+reason,
+			map[string]any{"title": title, "participants": now, "peak": peak})
+		a.engine.Stop()
+		a.emitState()
+	}
 	a.engine.OnParticipants = func(n int) {
 		logger.Debugf(src, "Участников на трансляции: %d", n)
 		a.emitState()
+	}
+	a.engine.OnDiag = func(items []map[string]string, people []string, url string, frames int) {
+		logger.Infof("Диагностика", "Страница %s, вложенных фреймов %d, кнопок и вкладок %d", url, frames, len(items))
+		for _, it := range items {
+			logger.Debugf("Диагностика", "%s | текст «%s» | aria «%s» | class «%s»",
+				it["tag"], it["text"], it["aria"], it["cls"])
+		}
+		if len(people) == 0 {
+			logger.Infof("Диагностика", "Ни одного элемента со словом «участники» не нашлось")
+		}
+		for _, p := range people {
+			logger.Infof("Диагностика", "Похоже на счётчик: «%s»", p)
+		}
 	}
 	a.engine.OnError = func(msg string) { a.idleHint = msg; a.emitState() }
 	a.engine.OnShutdown = func() { a.quitting = true; a.wnd.Quit() }
@@ -346,7 +466,7 @@ func (a *App) wireServices() {
 		})
 	}
 	a.account.OnLinksPulled = func(links []json.RawMessage) { a.scheduler.ApplyRemote(links) }
-	a.account.OnSettings = func() { a.dispatch(a.emitState) }
+	a.account.OnSettings = func() { a.dispatch(a.emitState); go a.loadSdoPreset(false) }
 	a.account.OnSyncError = func(err string) { logger.Warnf("Синхронизация", "%s", err) }
 
 	a.cfg.OnChange(func(key string) {
@@ -360,6 +480,7 @@ func (a *App) wireServices() {
 				a.engine.SetNickname(a.cfg.Nickname())
 			case "group":
 				go a.scheduler.Refresh()
+				go a.loadSdoPreset(false)
 			case "volume":
 				a.engine.SetVolume(a.cfg.Volume())
 			}
@@ -383,6 +504,30 @@ func (a *App) wireServices() {
 			a.emitState()
 		})
 		a.mail.CheckNow()
+	}
+	// Пропущенную пару отмечаем на сервере: из этого собирается общая сводка
+	// по группе. Пишем только сам факт — кто это, сервер знает по токену.
+	a.scheduler.OnMissed = func(e schedule.Entry) {
+		if !a.account.Authorized() {
+			logger.Debugf(src, "Пропуск «%s» не отправлен: нет аккаунта", e.Title)
+			return
+		}
+		go func() {
+			r := a.apiC.Post(proto.ApiWallMiss, map[string]any{
+				"lesson_id":      e.ID,
+				"group":          a.cfg.Group(),
+				"subject":        e.Title,
+				"start":          e.StartISO,
+				"end":            e.EndISO,
+				"seconds_inside": e.SecondsInside,
+				"marked":         e.Status == proto.LinkMarked,
+			})
+			if r.OK {
+				logger.Infof(src, "Пропуск пары «%s» отмечен на сервере", e.Title)
+			} else {
+				logger.Debugf(src, "Не удалось отправить пропуск «%s»: %s", e.Title, r.Err)
+			}
+		}()
 	}
 	a.scheduler.OnLinkMissing = func(title string, start time.Time) {
 		a.dispatch(func() {
@@ -563,7 +708,16 @@ func (a *App) layout() {
 	x, y, w, h, haveRect := a.previewBounds(b)
 	showLogin := shown && haveRect && a.loginActive
 	a.auth.SetBounds(x, y, max32(w, 1), max32(h, 1), showLogin)
-	a.stage.SetBounds(x, y, max32(w, 1), max32(h, 1), a.stageShown())
+	stage := a.stageShown()
+	a.stage.SetBounds(x, y, max32(w, 1), max32(h, 1), stage)
+	// Чёрное окно вместо трансляции — вопрос раскладки, поэтому её смену
+	// записываем: видно, какого размера окно и почему оно скрыто.
+	if stage != a.stageWasShown {
+		a.stageWasShown = stage
+		logger.Debugf(src, "Окно трансляции %s: %dx%d в (%d,%d), эко=%v (%s), вкладка=%d",
+			map[bool]string{true: "показано", false: "скрыто"}[stage], w, h, x, y,
+			a.eco.LowPower(), a.eco.Reason(), a.tab)
+	}
 }
 
 func (a *App) previewBounds(b int32) (x, y, w, h int32, ok bool) {
@@ -575,6 +729,74 @@ func (a *App) previewBounds(b int32) (x, y, w, h int32, ok bool) {
 	x, y = b+int32(p.x*dpr), b+int32(p.y*dpr)
 	w, h = int32(p.w*dpr), int32(p.h*dpr)
 	return x, y, w, h, w > 10 && h > 10 && a.tab == 0
+}
+
+// planSdoSearch сопоставляет ближайшие занятия без ссылок с курсами СДО. Пока
+// это только план: он показывает, где именно клиент будет искать ссылку, и
+// служит основой для постоянного автопоиска.
+// presetState — что показать в окне курса: чей пресет лежит и сколько ссылок.
+func (a *App) presetState() map[string]any {
+	group, count := a.cfg.PresetInfo()
+	return map[string]any{"group": group, "count": count, "own": len(a.cfg.SdoLinks())}
+}
+
+func (a *App) planSdoSearch() {
+	if len(a.sdoCourses) == 0 {
+		return
+	}
+	pending := a.scheduler.Pending(0)
+	soon, matched := 0, 0
+	deadline := time.Now().Add(sdoSearchHorizon)
+	for _, e := range pending {
+		if e.Start.Before(deadline) {
+			soon++
+		}
+		course, score := sdo.PickCourse(e.Title, a.sdoCourses)
+		if course.ID == "" {
+			logger.Debugf("СДО", "Курс для «%s» не найден (лучшее совпадение %.0f%%)", e.Title, score*100)
+			continue
+		}
+		matched++
+		logger.Debugf("СДО", "«%s» %s → курс «%s» (%.0f%%)",
+			e.Title, e.Start.Format("02.01 15:04"), course.Title, score*100)
+	}
+	logger.Infof("СДО", "Курсов %d, занятий без ссылки %d (ближайшие сутки-двое: %d), курс подобран для %d",
+		len(a.sdoCourses), len(pending), soon, matched)
+	a.scanNextCourse(pending)
+}
+
+// scanNextCourse заходит на страницу курса ближайшего занятия без ссылки.
+// Пока это разведка: клиент показывает, какой кандидат нашёлся, но сам ссылку
+// не подставляет.
+func (a *App) scanNextCourse(pending []schedule.Entry) {
+	for _, e := range pending {
+		course, _ := sdo.PickCourse(e.Title, a.sdoCourses)
+		if course.URL == "" {
+			continue
+		}
+		a.sdoScanFor = e
+		logger.Infof("СДО", "Смотрю курс «%s» ради занятия «%s»", course.Title, e.Title)
+		a.trySdo(2*time.Second, 6, func(string) bool { return a.engine.ScanSdoCourse(course.Title, course.URL) })
+		return
+	}
+}
+
+// Скрытая вкладка одна на всех, поэтому проверка СДО может застать её за
+// проверкой ЕСКО. Тогда пробуем ещё раз, а не молча пропускаем до следующего
+// круга — иначе список курсов не соберётся до вечера.
+func (a *App) scheduleSdoCheck(after time.Duration) { a.trySdo(after, 6, a.engine.CheckSdo) }
+
+func (a *App) trySdo(after time.Duration, attempts int, run func(string) bool) {
+	time.AfterFunc(after, func() {
+		a.dispatch(func() {
+			if a.quitting || a.loginActive || a.engine.Active() {
+				return
+			}
+			if !run(sdoURL) && attempts > 1 {
+				a.trySdo(20*time.Second, attempts-1, run)
+			}
+		})
+	})
 }
 
 func (a *App) scheduleEscoCheck(after time.Duration) {
@@ -808,20 +1030,35 @@ func (a *App) registerHandlers() {
 		return nil, nil
 	})
 
-	h("escoBegin", func(*Call) (any, error) {
-		a.loginActive = true
-		a.engine.BeginLogin(escoLoginURL)
+	// Вход в Пульс и в СДО — разные системы с разными логинами, поэтому и
+	// кнопки разные: одна для отметок по QR, другая для ссылок на лекции.
+	h("authBegin", func(c *Call) (any, error) {
+		system := c.Str("system")
+		url := escoLoginURL
+		if system == "sdo" {
+			url = sdoURL
+		} else {
+			system = "pulse"
+		}
+		a.loginActive, a.loginSystem = true, system
+		a.engine.BeginLogin(url, system)
 		a.layout()
 		a.emitState()
 		return nil, nil
 	})
-	h("escoEnd", func(*Call) (any, error) {
-		a.loginActive = false
+	h("authEnd", func(*Call) (any, error) {
+		system := a.loginSystem
+		a.loginActive, a.loginSystem = false, ""
 		a.engine.EndLogin()
 		a.layout()
-		logger.Infof(src, "Окно авторизации ЕСКО закрыто, проверяю состояние входа")
 		a.emitState()
-		a.scheduleEscoCheck(2 * time.Second)
+		if system == "sdo" {
+			logger.Infof(src, "Окно входа в СДО закрыто, проверяю состояние входа")
+			a.scheduleSdoCheck(2 * time.Second)
+		} else {
+			logger.Infof(src, "Окно входа в Пульс закрыто, проверяю состояние входа")
+			a.scheduleEscoCheck(2 * time.Second)
+		}
 		return nil, nil
 	})
 
@@ -847,6 +1084,68 @@ func (a *App) registerHandlers() {
 		} else {
 			logger.Infof(src, "Группа изменена на %s", a.cfg.Group())
 		}
+		return nil, nil
+	})
+	h("pageDiag", func(*Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("действие доступно только администратору")
+		}
+		if !a.engine.DumpPage() {
+			return nil, errors.New("сначала подключитесь к трансляции")
+		}
+		logger.Infof("Диагностика", "Снимаю срез страницы трансляции — смотрите журнал (уровень «Отладка»)")
+		return nil, nil
+	})
+	h("sdoPresetSave", func(c *Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("пресеты сохраняет только администратор")
+		}
+		c.Async()
+		group, links := a.cfg.Group(), a.cfg.SdoLinks()
+		go func() { c.Reply(nil, a.saveSdoPreset(group, links)) }()
+		return nil, nil
+	})
+	h("sdoPresetDelete", func(c *Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("пресеты удаляет только администратор")
+		}
+		c.Async()
+		group := a.cfg.Group()
+		go func() { c.Reply(nil, a.deleteSdoPreset(group)) }()
+		return nil, nil
+	})
+	h("sdoPresetLoad", func(c *Call) (any, error) {
+		c.Async()
+		go func() { c.Reply(nil, a.loadSdoPreset(true)) }()
+		return nil, nil
+	})
+	h("wall", func(c *Call) (any, error) {
+		c.Async()
+		period := c.Str("period")
+		go func() { c.Reply(a.loadWall(period)) }()
+		return nil, nil
+	})
+	h("sdoTest", func(c *Call) (any, error) {
+		if !a.isAdmin() {
+			return nil, errors.New("проверка поиска доступна только администратору")
+		}
+		return nil, a.TestSdoSearch(c.Str("id"))
+	})
+	h("setSdoLink", func(c *Call) (any, error) {
+		title, u := c.Str("title"), strings.TrimSpace(c.Str("url"))
+		if title == "" {
+			return nil, errors.New("не указан предмет")
+		}
+		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return nil, errors.New("ссылка должна начинаться с http:// или https://")
+		}
+		a.cfg.SetSdoLink(sdo.SubjectKey(title), u)
+		if u == "" {
+			logger.Infof("СДО", "Курс для «%s» убран", title)
+		} else {
+			logger.Infof("СДО", "Курс для «%s»: %s", title, u)
+		}
+		a.emitSchedule()
 		return nil, nil
 	})
 	h("scheduleRefresh", func(*Call) (any, error) { go a.scheduler.RefreshNow(); return nil, nil })
@@ -901,6 +1200,110 @@ func (a *App) registerHandlers() {
 	})
 }
 
+// Пресет — общий на группу набор ссылок «предмет → курс в СДО». Собирает его
+// администратор, остальным он приезжает с сервера и работает как значение по
+// умолчанию: своя вписанная ссылка всегда важнее.
+func (a *App) loadSdoPreset(loud bool) error {
+	if !a.account.Authorized() {
+		if loud {
+			return errors.New("пресеты доступны только с аккаунтом")
+		}
+		return nil
+	}
+	group := a.cfg.Group()
+	if group == "" {
+		if loud {
+			return errors.New("сначала укажите группу на вкладке «Расписание»")
+		}
+		return nil
+	}
+	r := a.apiC.GetQuery(proto.ApiSdoPreset, map[string]string{"group": group})
+	if !r.OK {
+		if r.Status == 404 {
+			a.dispatch(func() { a.cfg.SetSdoPreset(group, nil); a.emitSchedule() })
+			if loud {
+				return errors.New("для группы " + group + " пресета пока нет")
+			}
+			return nil
+		}
+		if loud {
+			return errors.New(r.Err)
+		}
+		return nil
+	}
+	links := map[string]string{}
+	if m, ok := r.Body["links"].(map[string]any); ok {
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				links[k] = s
+			}
+		}
+	}
+	a.dispatch(func() {
+		a.cfg.SetSdoPreset(group, links)
+		logger.Infof("СДО", "Пресет группы %s получен: ссылок %d", group, len(links))
+		a.emitSchedule()
+		a.emitState()
+	})
+	return nil
+}
+
+func (a *App) saveSdoPreset(group string, links map[string]string) error {
+	if group == "" {
+		return errors.New("сначала укажите группу на вкладке «Расписание»")
+	}
+	if len(links) == 0 {
+		return errors.New("нет ни одной своей ссылки на курс — сохранять нечего")
+	}
+	r := a.apiC.Put(proto.ApiSdoPreset, map[string]any{"group": group, "links": links})
+	if !r.OK {
+		return errors.New(r.Err)
+	}
+	a.dispatch(func() {
+		a.cfg.SetSdoPreset(group, links)
+		logger.Infof("СДО", "Пресет группы %s сохранён: ссылок %d", group, len(links))
+		a.emitState()
+	})
+	return nil
+}
+
+func (a *App) deleteSdoPreset(group string) error {
+	if group == "" {
+		return errors.New("группа не указана")
+	}
+	r := a.apiC.DeleteQuery(proto.ApiSdoPreset, map[string]string{"group": group})
+	if !r.OK && r.Status != 404 {
+		return errors.New(r.Err)
+	}
+	a.dispatch(func() {
+		a.cfg.SetSdoPreset(group, nil)
+		logger.Infof("СДО", "Пресет группы %s удалён", group)
+		a.emitSchedule()
+		a.emitState()
+	})
+	return nil
+}
+
+// Сводка пропусков по своей группе. В общую выдачу сервер включает только тех,
+// кто сам разрешил участие (настройка wall_public), остальные копятся молча.
+func (a *App) loadWall(period string) (any, error) {
+	if !a.account.Authorized() {
+		return nil, errors.New("сводка доступна только с аккаунтом")
+	}
+	group := a.cfg.Group()
+	if group == "" {
+		return nil, errors.New("сначала укажите группу на вкладке «Расписание»")
+	}
+	if period == "" {
+		period = "month"
+	}
+	r := a.apiC.GetQuery(proto.ApiWall, map[string]string{"group": group, "period": period})
+	if !r.OK {
+		return nil, errors.New(r.Err)
+	}
+	return r.Body, nil
+}
+
 func (a *App) isAdmin() bool {
 	return a.account.Authorized() && strings.EqualFold(a.account.Login(), adminLogin)
 }
@@ -948,14 +1351,19 @@ func (a *App) snapshot() map[string]any {
 		"mail": map[string]any{"configured": m.Valid(), "host": m.Host, "port": m.Port, "user": m.User,
 			"sender": m.SenderFilter(), "security": m.Security, "monitoring": a.cfg.MailMonitoring(),
 			"status": a.mailStatus},
-		"telegram":   map[string]any{"linked": a.tgLinked, "username": a.tgUser},
-		"esco":       map[string]any{"ok": a.escoOK, "loginActive": a.loginActive, "name": a.escoName},
+		"telegram": map[string]any{"linked": a.tgLinked, "username": a.tgUser},
+		"esco": map[string]any{"ok": a.escoOK, "name": a.escoName,
+			"loginActive": a.loginActive && a.loginSystem != "sdo"},
+		"sdo": map[string]any{"ok": a.sdoOK, "name": a.sdoName, "courses": len(a.sdoCourses),
+			"loginActive": a.loginActive && a.loginSystem == "sdo"},
 		"attendance": map[string]any{"status": a.attendStatus, "text": a.attendText},
 		"volume":     a.cfg.Volume(),
 		"update":     map[string]any{"available": a.updater.Available(), "version": a.updater.Latest(), "notes": a.updNotes, "progress": a.updProgress},
 		"settings": map[string]any{
 			"nickname": a.cfg.Nickname(), "group": a.cfg.Group(), "server": a.cfg.ServerURL(),
 		},
+		"sdoTest":        map[string]any{"running": a.search.busy && a.search.test, "lines": a.sdoReport},
+		"sdoPreset":      a.presetState(),
 		"needNickname":   a.needNickname,
 		"onboardingDone": a.cfg.OnboardingDone(),
 	}
@@ -971,9 +1379,20 @@ func (a *App) emitSchedule() {
 	if a.br == nil {
 		return
 	}
+	entries := a.scheduler.Entries()
+	courses := make(map[string]string, len(entries))
+	sources := make(map[string]string, len(entries))
+	for _, e := range entries {
+		key := sdo.SubjectKey(e.Title)
+		if u := a.cfg.SdoLink(key); u != "" {
+			courses[e.ID] = u
+			sources[e.ID] = a.cfg.SdoLinkSource(key)
+		}
+	}
 	a.br.Emit("schedule", map[string]any{
-		"entries": a.scheduler.Entries(), "stats": a.scheduler.Stats(), "status": a.scheduler.Status(),
+		"entries": entries, "stats": a.scheduler.Stats(), "status": a.scheduler.Status(),
 		"activeId": a.scheduler.ActiveID(), "group": a.cfg.Group(),
+		"sdo": courses, "sdoFrom": sources,
 	})
 }
 

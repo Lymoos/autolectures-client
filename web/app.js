@@ -135,7 +135,12 @@
   $('btn-eco').onclick = function () { AL.call('eco', { on: !(S.eco && S.eco.manual) }); };
   $('mail-toggle').addEventListener('change', function () { AL.call('mailToggle', { on: this.checked }); });
   $('btn-telegram').onclick = function () { openDialog('telegram'); telegramFlow(); };
-  $('btn-esco').onclick = function () { AL.call(S.esco && S.esco.loginActive ? 'escoEnd' : 'escoBegin'); };
+  $('btn-esco').onclick = function () {
+    AL.call((S.esco && S.esco.loginActive) ? 'authEnd' : 'authBegin', { system: 'pulse' });
+  };
+  $('btn-sdo-login').onclick = function () {
+    AL.call((S.sdo && S.sdo.loginActive) ? 'authEnd' : 'authBegin', { system: 'sdo' });
+  };
   $('btn-mail').onclick = function () { openDialog('mail'); loadMailForm(); };
   $('btn-account').onclick = function () { openDialog('account'); };
   $('btn-settings').onclick = function () { openDialog('settings'); fillSettings(); };
@@ -165,7 +170,7 @@
   var dialog = null;
   function openDialog(name) {
     dialog = name;
-    ['account', 'settings', 'nickname', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
+    ['account', 'settings', 'nickname', 'sdo', 'mail', 'telegram'].forEach(function (n) { show($('dlg-' + n), n === name); });
     show($('overlay'), true);
     AL.call('overlay', { open: true });
   }
@@ -226,6 +231,12 @@
     adminErr('');
     AL.call('adminReset').catch(function (e) { $('btn-reset').disabled = false; adminErr(e.message); });
   };
+  $('btn-diag').onclick = function () {
+    adminErr('');
+    AL.call('pageDiag')
+      .then(function () { closeDialog(); showTab(2); })
+      .catch(function (e) { adminErr(e.message); });
+  };
   $('btn-onboard').onclick = function () {
     adminErr('');
     onboardingStarted = true;   // иначе обучение стартует ещё и из обработчика состояния
@@ -254,13 +265,61 @@
   }
 
   // почта
+  var MAIL_PRESETS = {
+    yandex: { host: 'imap.yandex.ru', port: 993, security: 'ssl', user: '@yandex.ru' }
+  };
+  var YANDEX_HELP = 'https://github.com/Lymoos/autolectures-client/wiki/'
+    + '%D0%9D%D0%B0%D1%81%D1%82%D1%80%D0%BE%D0%B9%D0%BA%D0%B0-IMAP-%D0%B4%D0%BB%D1%8F-'
+    + '%D1%8F%D0%BD%D0%B4%D0%B5%D0%BA%D1%81-%D0%BF%D0%BE%D1%87%D1%82%D1%8B';
+  $('mail-help-link').onclick = function () { AL.call('openUrl', { url: YANDEX_HELP }); };
+
+  // У готовой конфигурации сервер, порт и шифрование фиксированные: их видно,
+  // но менять нечего. Повторный клик по плитке снимает выбор.
+  var mailPreset = '';
+  function lockMailFields(on) {
+    $('mail-host').readOnly = on;
+    $('mail-port').readOnly = on;
+    $('mail-sec').classList.toggle('locked', on);
+  }
+  function applyPreset(name) {
+    var p = MAIL_PRESETS[name];
+    mailPreset = p ? name : '';
+    document.querySelectorAll('.preset').forEach(function (b) {
+      b.classList.toggle('chosen', !!p && b.dataset.preset === name);
+    });
+    if (p) {
+      $('mail-host').value = p.host;
+      $('mail-port').value = p.port;
+      selectValue($('mail-sec'), p.security);
+      if (!$('mail-user').value.trim()) $('mail-user').value = p.user;
+    }
+    lockMailFields(!!p);
+  }
+  document.querySelectorAll('.preset').forEach(function (b) {
+    b.onclick = function () {
+      applyPreset(mailPreset === b.dataset.preset ? '' : b.dataset.preset);
+      show($('btn-mail-connect'), true);
+      if (mailPreset) $('mail-user').focus();
+    };
+  });
+
   function loadMailForm() {
     var m = S.mail || {};
+    // Настроенный ящик не показываем формой: там нечего менять, только отключить.
+    show($('mail-linked'), !!m.configured);
+    show($('mail-setup'), !m.configured);
+    if (m.configured) {
+      $('mail-linked-user').textContent = m.user || '';
+      $('mail-linked-sender').textContent = m.sender || 'invitation@mts-link.ru';
+      $('mail-linked-status').textContent = m.status || (m.monitoring ? 'Мониторинг активен' : 'Мониторинг выключен');
+      return;
+    }
     $('mail-host').value = m.host || ''; $('mail-port').value = m.port || 993; $('mail-user').value = m.user || ''; $('mail-pass').value = '';
     $('mail-sender').value = m.sender || ''; selectValue($('mail-sec'), m.security || '');
-    show($('mail-msg'), false); show($('btn-mail-disconnect'), !!m.configured); $('btn-mail-connect').disabled = false;
-    // почта подключена — остаётся только «Отключить»
-    show($('btn-mail-connect'), !m.configured);
+    applyPreset(/(^|\.)yandex\.ru$/i.test(m.host || '') ? 'yandex' : '');
+    show($('mail-msg'), false);
+    $('btn-mail-connect').disabled = false;
+    show($('btn-mail-connect'), true);
   }
   // правка полей возвращает кнопку
   ['mail-host', 'mail-port', 'mail-user', 'mail-pass', 'mail-sender'].forEach(function (id) {
@@ -289,8 +348,8 @@
     if (!s.host || !s.user || !s.password) return mailMsg('Заполните сервер, логин и пароль', false);
     $('btn-mail-connect').disabled = true; mailMsg('Подключение к ' + s.host + '…', null);
     AL.call('mailTest', s).then(function () {
-      mailMsg('Почта подключена, разбираются письма от «' + esc(s.sender || 'mts-link.ru') + '». Переключатель мониторинга появился на панели слева.', true);
-      show($('btn-mail-connect'), false); show($('btn-mail-disconnect'), true);
+      mailMsg('Почта подключена, разбираются письма от «' + esc(s.sender || 'invitation@mts-link.ru') + '». Переключатель мониторинга появился на панели слева.', true);
+      setTimeout(loadMailForm, 400);
     })
       .catch(function (e) { mailMsg(e.message, false); })
       .finally(function () { $('btn-mail-connect').disabled = false; });
@@ -331,6 +390,62 @@
   }
   $('sch-group').addEventListener('change', submitGroup);
   $('sch-group').addEventListener('keydown', function (e) { if (e.key === 'Enter') { submitGroup(); this.blur(); } });
+  // Курс в СДО задаётся на предмет: клиент ищет там ссылку, когда начинается пара.
+  var sdoSubject = '', sdoMap = {};
+  function sdoErr(t) { $('sdo-err').textContent = t; show($('sdo-err'), !!t); }
+  var sdoEntry = '', sdoFrom = {};
+  function presetInfoText() {
+    var p = (S.sdoPreset || {}), group = (S.settings || {}).group || '';
+    var mine = p.own || 0;
+    if (!p.group || p.count === 0) {
+      return 'Пресет для группы ' + (group || '—') + ' на сервере не сохранён. Своих ссылок: ' + mine + '.';
+    }
+    return 'Пресет группы ' + p.group + ': ссылок ' + p.count + '. Своих ссылок: ' + mine + '.';
+  }
+  function refreshPresetInfo() { $('sdo-preset-info').textContent = presetInfoText(); }
+  function presetCall(method, btn) {
+    sdoErr('');
+    btn.disabled = true;
+    AL.call(method)
+      .then(function () { refreshPresetInfo(); })
+      .catch(function (e) { sdoErr(e.message); })
+      .finally(function () { btn.disabled = false; });
+  }
+  $('btn-preset-save').onclick = function () { presetCall('sdoPresetSave', this); };
+  $('btn-preset-load').onclick = function () { presetCall('sdoPresetLoad', this); };
+  $('btn-preset-del').onclick = function () { presetCall('sdoPresetDelete', this); };
+
+  function openSdo(id, title, url) {
+    sdoSubject = title; sdoEntry = id;
+    openDialog('sdo');
+    sdoErr('');
+    $('sdo-subject').textContent = title;
+    $('sdo-url').value = url || '';
+    show($('btn-sdo-clear'), !!url);
+    show($('sdo-admin'), !!S.admin);
+    show($('sdo-from-preset'), sdoFrom[id] === 'preset');
+    if (S.admin) refreshPresetInfo();
+    $('btn-sdo-check').disabled = !url;
+    show($('sdo-report'), false);
+    $('sdo-report').textContent = '';
+    setTimeout(function () { $('sdo-url').focus(); }, 50);
+  }
+  $('btn-sdo-check').onclick = function () {
+    sdoErr('');
+    $('sdo-report').textContent = 'Запускаю проверку…';
+    show($('sdo-report'), true);
+    AL.call('sdoTest', { id: sdoEntry }).catch(function (e) { sdoErr(e.message); });
+  };
+  $('sdo-url').addEventListener('input', function () { $('btn-sdo-check').disabled = !this.value.trim(); });
+  function saveSdo(url) {
+    AL.call('setSdoLink', { title: sdoSubject, url: url })
+      .then(function () { closeDialog(); })
+      .catch(function (e) { sdoErr(e.message); });
+  }
+  $('btn-sdo-save').onclick = function () { saveSdo($('sdo-url').value.trim()); };
+  $('btn-sdo-clear').onclick = function () { saveSdo(''); };
+  $('sdo-url').addEventListener('keydown', function (e) { if (e.key === 'Enter') saveSdo(this.value.trim()); });
+
   var lastSig = '';
   var days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
   function dayLabel(d) {
@@ -342,7 +457,59 @@
   }
   var statusLook = { MARKED: ['✓ Отмечено', 's-marked'], LIVE: ['● В лекции', 's-live'], MISSED: ['Пропущено', 's-missed'], DONE: ['Завершено без отметки', 's-done'], PENDING: ['Ожидание', 's-pending'] };
   var sourceLabel = { email: 'из почты', manual: 'вручную', telegram: 'из Telegram', cloud: 'из облака', schedule: 'расписание' };
+  // Сегодняшние лекции в боковой панели: появляются, только когда указана
+  // группа — до этого расписания попросту нет.
+  var TODAY_LOOK = {
+    wait:   ['s-wait', 'ico-clock', 'Ожидание лекции'],
+    live:   ['s-live', 'ico-person', 'На лекции, ждём QR-код для отметки'],
+    nomark: ['s-nomark', 'ico-check', 'Были на лекции, но отметки по QR не было'],
+    ok:     ['s-ok', 'ico-check', 'Отметка по QR прошла'],
+    fail:   ['s-fail', 'ico-cross', 'Отметка не прошла — были проблемы'],
+    lost:   ['s-lost', 'ico-deko', 'Пара прошла мимо: были меньше часа и без отметки']
+  };
+  function todayState(e, activeId) {
+    if (e.status === 'MARKED') return 'ok';
+    if (e.id === activeId) return 'live';
+    if (e.failed) return 'fail';
+    if ((e.seconds_inside || 0) >= 3600) return 'nomark';
+    // Время пары вышло, а мы были меньше часа и без отметки — проспали.
+    if (new Date(e.end).getTime() < Date.now()) return 'lost';
+    return 'wait';
+  }
+  var lastTodaySig = '';
+  function renderToday(d) {
+    var hasGroup = !!(d.group || '').trim();
+    var now = new Date(), today = now.toDateString();
+    var items = (d.entries || []).filter(function (e) {
+      return new Date(e.start).toDateString() === today;
+    }).slice(0, 8);
+    show($('today'), hasGroup && items.length > 0);
+    if (!hasGroup || !items.length) { $('today-list').innerHTML = ''; lastTodaySig = ''; return; }
+    // Список перерисовываем только когда он реально изменился: событие
+    // расписания приходит каждую секунду.
+    var sig = items.map(function (e) {
+      return e.id + todayState(e, d.activeId);
+    }).join('|');
+    if (sig === lastTodaySig) return;
+    lastTodaySig = sig;
+    var html = '';
+    items.forEach(function (e) {
+      var st = todayState(e, d.activeId), look = TODAY_LOOK[st];
+      var start = new Date(e.start), end = new Date(e.end);
+      var hm = function (x) { return ('0' + x.getHours()).slice(-2) + ':' + ('0' + x.getMinutes()).slice(-2); };
+      html += '<div class="today-item ' + look[0] + (e.id === d.activeId ? ' now' : '') + '" title="'
+        + esc(e.title) + ' · ' + hm(start) + '–' + hm(end) + ' · ' + look[2] + '">'
+        + '<span class="today-wash"></span>'
+        + '<span class="tm">' + hm(start) + '</span>'
+        + '<span class="nm">' + esc(e.title) + '</span>'
+        + '<span class="ico ' + look[1] + '"></span>'
+        + '</div>';
+    });
+    $('today-list').innerHTML = html;
+  }
+
   on('schedule', function (d) {
+    renderToday(d);
     var st = d.stats || {};
     $('st-week').textContent = st.week_lessons || 0; $('st-attended').textContent = st.attended || 0; $('st-marked').textContent = st.marked || 0;
     var sec = st.seconds_inside || 0, h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
@@ -353,7 +520,9 @@
                                   : 'Впишите группу, чтобы загрузить расписание МИРЭА');
     var now = Date.now(), cutoff = now - 3 * 3600e3;
     var items = (d.entries || []).filter(function (e) { return e.id === d.activeId || new Date(e.end).getTime() >= cutoff; }).slice(0, 40);
-    var sig = items.map(function (e) { return e.id + e.status + e.url; }).join('|') + d.activeId;
+    sdoMap = d.sdo || {};
+    sdoFrom = d.sdoFrom || {};
+    var sig = items.map(function (e) { return e.id + e.status + e.url + (sdoMap[e.id] ? '1' : '0'); }).join('|') + d.activeId;
     // Таймер активной лекции обновляем без перестройки списка
     if (sig === lastSig) {
       var t = document.querySelector('.entry.active .timer');
@@ -382,6 +551,10 @@
         + (e.url ? '<button class="btn subtle" data-open="' + esc(e.url) + '" title="' + esc(e.url) + '">Ссылка</button>'
                  + (active ? '' : '<button class="btn ghost" data-connect="' + esc(e.url) + '" data-title="' + esc(e.title) + '" title="Войти на эту трансляцию сейчас">Подключиться</button>')
                  : '<span class="dim">ссылка ещё не получена</span>')
+        + '<button class="icon-btn sdo' + (sdoMap[e.id] ? ' on' : '') + '" data-sdo="' + esc(e.id) + '" data-title="' + esc(e.title) + '" title="'
+        + (sdoMap[e.id] ? (sdoFrom[e.id] === 'preset' ? 'Курс в СДО из пресета группы' : 'Курс в СДО указан — ссылка на пару ищется там')
+                        : 'Указать страницу курса в СДО: клиент сам найдёт ссылку на пару')
+        + '"><span class="ico ico-book"></span></button>'
         + (active || e.source === 'schedule' ? '' : '<button class="icon-btn danger" data-remove="' + esc(e.id) + '" title="Убрать эту запись из списка"><span class="ico ico-close"></span></button>')
         + '</div></div>';
     });
@@ -392,6 +565,7 @@
     if (b.dataset.open) AL.call('openUrl', { url: b.dataset.open });
     if (b.dataset.connect) { AL.call('connect', { url: b.dataset.connect, title: b.dataset.title }); showTab(0); }
     if (b.dataset.remove) AL.call('scheduleRemove', { id: b.dataset.remove });
+    if (b.dataset.sdo) openSdo(b.dataset.sdo, b.dataset.title, sdoMap[b.dataset.sdo] || '');
   });
 
   var minLevel = 1, logTotal = 0, levelNames = ['ОТЛАДКА', 'ИНФО', 'ПРЕДУПР', 'ОШИБКА'];
@@ -453,7 +627,7 @@
   function startOnboarding() {
     obSteps = [
       { target: 'url', title: 'Ссылка на трансляцию', text: 'Вставьте ссылку MTS-Link. Если оставить поле пустым, ссылки придут сами: из расписания, из письма или из Telegram.' },
-      { target: 'auth-block', title: 'Авторизация', text: 'Telegram — команды и уведомления. МИРЭА — вход в ЕСКО, без него не пройдёт отметка по QR-коду. Почта — разбор приглашений MTS-Link.' },
+      { target: 'auth-block', title: 'Авторизация', text: 'Telegram — команды и уведомления. МИРЭА Пульс — вход для отметки по QR-коду. МИРЭА СДО — оттуда клиент берёт ссылки на лекции. Почта — разбор приглашений MTS-Link.' },
       { target: 'btn-start', title: 'Старт сессии', text: 'Одна кнопка запускает всё: связь с сервером, планировщик по расписанию, мониторинг почты и вход на трансляцию.' },
       { target: 'previewer', title: 'Live Previewer', text: 'Здесь идёт трансляция: картинка включается сразу, как клиент вошёл в лекцию. Кнопка «ЭКО» рядом с таймером выключает отрисовку кадров — звук, anti-AFK и сканер QR продолжают работать, а ноутбук не греется. Сама по себе картинка гаснет, когда окно свёрнуто или открыта другая вкладка.' },
       { tab: 1, target: 'sch-group', title: 'Группа', text: 'Впишите группу как в расписании МИРЭА, например ИВБО-21-23, и нажмите Enter.' },
@@ -498,11 +672,18 @@
       : 'Привязать Telegram-бота: команды и уведомления';
     var esco = s.esco || {};
     $('dot-esco').classList.toggle('on', !!esco.ok);
-    // вход в ЕСКО определяется по странице
-    $('esco-label').textContent = esco.loginActive ? 'Готово, вернуться' : (esco.ok && esco.name ? 'МИРЭА: ' + esco.name : 'МИРЭА');
+    // вход определяется по самой странице системы
+    $('esco-label').textContent = esco.loginActive ? 'Готово, вернуться' : (esco.ok && esco.name ? 'Пульс: ' + esco.name : 'МИРЭА Пульс');
     $('btn-esco').title = esco.loginActive ? 'Закрыть окно входа и вернуться к трансляции'
-      : esco.ok ? 'Вход в ЕСКО выполнен' + (esco.name ? ' (' + esco.name + ')' : '') + ' — отметка по QR-коду работает'
-                : 'Войти в единую систему МИРЭА для автоматической отметки';
+      : esco.ok ? 'Вход в Пульс выполнен' + (esco.name ? ' (' + esco.name + ')' : '') + ' — отметка по QR-коду работает'
+                : 'Вход в МИРЭА Пульс: нужен для автоматической отметки по QR-коду';
+    var sdoState = s.sdo || {};
+    $('dot-sdo').classList.toggle('on', !!sdoState.ok);
+    $('sdo-label').textContent = sdoState.loginActive ? 'Готово, вернуться'
+      : (sdoState.ok && sdoState.name ? 'СДО: ' + sdoState.name : 'МИРЭА СДО');
+    $('btn-sdo-login').title = sdoState.loginActive ? 'Закрыть окно входа и вернуться'
+      : sdoState.ok ? 'Вход в СДО выполнен' + (sdoState.courses ? ', курсов: ' + sdoState.courses : '') + ' — ссылки на лекции ищутся там'
+                    : 'Вход в СДО МИРЭА: оттуда берутся ссылки на лекции';
     $('dot-mail').classList.toggle('on', !!s.mail.configured);
     $('mail-row').classList.toggle('collapsed', !s.mail.configured);
     $('mail-toggle').checked = !!s.mail.monitoring; $('mail-status').textContent = s.mail.status || (s.mail.monitoring ? 'Мониторинг активен' : 'Мониторинг выключен');
@@ -552,6 +733,13 @@
     $('acc-status').innerHTML = s.account.guest ? 'Гостевой режим. Войдите, чтобы синхронизировать настройки между устройствами и подключить Telegram.'
       : 'Вы вошли как <b>' + esc(s.account.login) + '</b>. Настройки, ссылки и статусы синхронизируются с сервером.';
     show($('acc-form'), s.account.guest); show($('btn-signout'), !s.account.guest);
+    // отчёт админской проверки поиска
+    var st = s.sdoTest || {};
+    if (dialog === 'sdo' && (st.lines || []).length) {
+      $('sdo-report').textContent = st.lines.join(String.fromCharCode(10));
+      show($('sdo-report'), true);
+      $('sdo-report').scrollTop = $('sdo-report').scrollHeight;
+    }
     // Имя для входа спрашиваем один раз на попытку: если окно закрыли крестиком,
     // навязываться повторно не надо.
     if (!s.needNickname) nickAsked = false;

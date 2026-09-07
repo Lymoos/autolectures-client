@@ -104,18 +104,23 @@ func (v *View) SetBounds(x, y, w, h int32, visible bool) {
 	}
 }
 
+// Порядок важен: WebView2 привязывает свою поверхность к окну, поэтому сначала
+// показываем окно и только потом включаем отрисовку — иначе контроллер считает
+// себя видимым, а рисовать ему некуда, и на месте трансляции остаётся пустота.
 func (v *View) SetVisible(visible bool) {
 	if v.visible == visible {
 		return
 	}
 	v.visible = visible
-	_ = v.Chromium.GetController().PutIsVisible(visible)
 	if visible {
 		win.ShowWindow(v.HWnd, win.SW_SHOWNA)
 		win.RaiseChild(v.HWnd)
-	} else {
-		win.ShowWindow(v.HWnd, win.SW_HIDE)
+		_ = v.Chromium.GetController().PutIsVisible(true)
+		v.Chromium.Resize()
+		return
 	}
+	_ = v.Chromium.GetController().PutIsVisible(false)
+	win.ShowWindow(v.HWnd, win.SW_HIDE)
 }
 
 func (v *View) Visible() bool { return v.visible }

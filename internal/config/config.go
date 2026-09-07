@@ -46,7 +46,7 @@ func (m Mail) Mode() string {
 
 func (m Mail) AutoSecurity() bool { return strings.TrimSpace(m.Security) == "" }
 
-const DefaultSender = "mts-link.ru"
+const DefaultSender = "invitation@mts-link.ru"
 
 func (m Mail) SenderFilter() string {
 	if s := strings.TrimSpace(m.Sender); s != "" {
@@ -72,6 +72,11 @@ type Data struct {
 	Mail              Mail              `json:"mail"`
 	MailLastUID       uint32            `json:"mail_last_uid"`
 	Links             []json.RawMessage `json:"links"`
+	// Предмет → страница курса в СДО, откуда берутся вебинары. Свои ссылки
+	// хранятся отдельно от пресета группы: свои всегда важнее.
+	SdoLinks       map[string]string `json:"sdo_links,omitempty"`
+	SdoPreset      map[string]string `json:"sdo_preset,omitempty"`
+	SdoPresetGroup string            `json:"sdo_preset_group,omitempty"`
 }
 
 type Config struct {
@@ -348,6 +353,83 @@ func (c *Config) MailLastUID() uint32 {
 }
 func (c *Config) SetMailLastUID(v uint32) {
 	c.set("mail_last_uid", func(d *Data) { d.MailLastUID = v })
+}
+
+func (c *Config) SdoLinks() map[string]string {
+	out := map[string]string{}
+	c.read(func(d *Data) {
+		for k, v := range d.SdoLinks {
+			out[k] = v
+		}
+	})
+	return out
+}
+
+// SdoLink отдаёт ссылку на курс: сначала свою, потом из пресета группы.
+func (c *Config) SdoLink(subject string) string {
+	u, _ := c.sdoLink(subject)
+	return u
+}
+
+// SdoLinkSource: "own" — вписана вручную, "preset" — пришла с пресетом группы.
+func (c *Config) SdoLinkSource(subject string) string {
+	_, src := c.sdoLink(subject)
+	return src
+}
+
+func (c *Config) sdoLink(subject string) (string, string) {
+	key := strings.ToLower(strings.TrimSpace(subject))
+	var own, preset, presetGroup, group string
+	c.read(func(d *Data) {
+		own, preset, presetGroup, group = d.SdoLinks[key], d.SdoPreset[key], d.SdoPresetGroup, d.Group
+	})
+	if own != "" {
+		return own, "own"
+	}
+	if preset != "" && strings.EqualFold(presetGroup, group) {
+		return preset, "preset"
+	}
+	return "", ""
+}
+
+// PresetInfo — чей пресет лежит локально и сколько в нём ссылок.
+func (c *Config) PresetInfo() (group string, count int) {
+	c.read(func(d *Data) { group, count = d.SdoPresetGroup, len(d.SdoPreset) })
+	return group, count
+}
+
+// SetSdoPreset запоминает пресет группы, пришедший с сервера.
+func (c *Config) SetSdoPreset(group string, links map[string]string) {
+	c.set("sdo_preset", func(d *Data) {
+		d.SdoPresetGroup = strings.ToUpper(strings.TrimSpace(group))
+		if len(links) == 0 {
+			d.SdoPreset = nil
+			return
+		}
+		d.SdoPreset = map[string]string{}
+		for k, v := range links {
+			if k = strings.ToLower(strings.TrimSpace(k)); k != "" && strings.TrimSpace(v) != "" {
+				d.SdoPreset[k] = strings.TrimSpace(v)
+			}
+		}
+	})
+}
+
+func (c *Config) SetSdoLink(subject, url string) {
+	key := strings.ToLower(strings.TrimSpace(subject))
+	if key == "" {
+		return
+	}
+	c.set("sdo_links", func(d *Data) {
+		if d.SdoLinks == nil {
+			d.SdoLinks = map[string]string{}
+		}
+		if url = strings.TrimSpace(url); url == "" {
+			delete(d.SdoLinks, key)
+		} else {
+			d.SdoLinks[key] = url
+		}
+	})
 }
 
 func (c *Config) Links() []json.RawMessage {

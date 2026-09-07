@@ -4,6 +4,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/Lymoos/autolectures/client/internal/logger"
 	"github.com/Lymoos/autolectures/client/internal/notify"
 	"github.com/Lymoos/autolectures/client/internal/proto"
+	"github.com/Lymoos/autolectures/client/internal/sdo"
 	"github.com/Lymoos/autolectures/client/internal/state"
 	"github.com/Lymoos/autolectures/client/internal/webview"
 )
@@ -79,6 +81,91 @@ const escoProbeScript = `
   } catch (e) { post({ type: 'esco', host: location.hostname, result: 'UNKNOWN', name: '' }); }
 })();`
 
+// СДО МИРЭА живёт за тем же входом, что и ЕСКО, поэтому куки уже есть в общем
+// профиле браузера. Пока только определяем, пускает ли нас система, и сколько
+// курсов видно — на этом потом построится разбор лекций из СДО.
+const sdoProbeScript = `
+(function () {
+  function post(o) { try { chrome.webview.postMessage(JSON.stringify(o)); } catch (e) {} }
+  try {
+    // Moodle сам помечает страницу: userloggedin или notloggedin. Это надёжнее
+    // поиска кнопки «Вход» — она бывает и на страницах вошедшего пользователя.
+    var cls = ' ' + (document.body.className || '') + ' ';
+    var loggedIn = / userloggedin /.test(cls);
+    var loggedOut = / notloggedin /.test(cls);
+
+    var name = '';
+    var menu = document.querySelector('[data-region="user-menu"] .usertext, .usermenu .usertext, .userbutton .usertext, [data-region="user-menu"]');
+    if (menu) name = (menu.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!name) {
+      var m = /Вы зашли под именем\s+([^(]{3,60})/i.exec(document.body.innerText || '');
+      if (m) name = m[1].split(String.fromCharCode(10))[0].trim();
+    }
+    var courses = document.querySelectorAll('.course-card, .coursebox, [data-region="course-content"], .card.dashboard-card').length;
+
+    // Тема РТУ МИРЭА не ставит класс userloggedin, поэтому опираемся ещё на
+    // меню пользователя, ссылки на курсы и текст страницы.
+    var menuAny = document.querySelector('[data-region="user-menu"], .usermenu, #user-menu-toggle, .userinitials, .avatar, .userpicture');
+    var hints = /мои курсы|my courses|личный кабинет|dashboard|выход|log out/i.test(document.body.innerText || '');
+    var courseLinks = document.querySelectorAll('a[href*="/course/view.php"]').length;
+    var loginForm = !!document.querySelector('form#login, form.login, input[name="password"]');
+
+    var result = 'UNKNOWN';
+    if (loggedOut || loginForm) result = 'OUT';
+    else if (loggedIn || menuAny || courses > 0 || courseLinks > 0 || hints || name) result = 'IN';
+
+    post({ type: 'sdo', host: location.hostname, result: result, name: name, courses: courses, cls: cls.trim().slice(0, 120) });
+  } catch (e) { post({ type: 'sdo', host: location.hostname, result: 'UNKNOWN', name: '', courses: 0 }); }
+})();`
+
+// diagScript снимает срез страницы трансляции: что за кнопки и вкладки на ней
+// есть, какие числа рядом со словом «участники». По этому срезу настраиваются
+// селекторы поиска — вслепую они не подбираются.
+const diagScript = `
+(function () {
+  function post(o) { try { chrome.webview.postMessage(JSON.stringify(o)); } catch (e) {} }
+  function text(el) { return ((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim(); }
+  function deep(sel) {
+    var out = [];
+    (function walk(root) {
+      try { out.push.apply(out, root.querySelectorAll(sel)); } catch (e) { return; }
+      var all = root.querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) if (all[i].shadowRoot) walk(all[i].shadowRoot);
+    })(document);
+    return out;
+  }
+  try {
+    var out = [], seen = {};
+    var nodes = deep('button, [role="button"], [role="tab"], a, li, div[class*="tab" i], span[class*="count" i], [class*="badge" i], [aria-label]');
+    for (var i = 0; i < nodes.length && out.length < 60; i++) {
+      var el = nodes[i];
+      var b = el.getBoundingClientRect();
+      if (b.width <= 0 || b.height <= 0) continue;
+      var t = text(el);
+      var aria = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+      if (t.length > 60) t = t.slice(0, 60);
+      var cls = (typeof el.className === 'string' ? el.className : '').slice(0, 60);
+      var key = t + '|' + aria + '|' + cls;
+      if (!t && !aria) continue;
+      if (seen[key]) continue;
+      seen[key] = 1;
+      out.push({ tag: el.tagName.toLowerCase(), text: t, aria: aria, cls: cls });
+    }
+    // отдельно всё, где рядом со словом «участник» есть число
+    var people = [];
+    var all = deep('*');
+    for (var j = 0; j < all.length && people.length < 15; j++) {
+      var el2 = all[j];
+      if (el2.children && el2.children.length > 3) continue;
+      var t2 = text(el2);
+      if (!t2 || t2.length > 60) continue;
+      if (!/участник|participant|в эфире|online|зрител/i.test(t2)) continue;
+      people.push(t2);
+    }
+    post({ type: 'diag', items: out, people: people, url: location.href, frames: document.querySelectorAll('iframe').length });
+  } catch (e) { post({ type: 'diag', items: [], people: [], url: String(e), frames: 0 }); }
+})();`
+
 type Engine struct {
 	view     *webview.View
 	auth     *webview.View
@@ -96,6 +183,9 @@ type Engine struct {
 	lastValidation time.Time
 	nickname       string
 	people         int
+	peakPeople     int
+	lowStreak      int
+	overFired      bool
 	scanEnabled    bool
 	antiAfk        bool
 	volume         int
@@ -108,11 +198,19 @@ type Engine struct {
 	pollTicker    *time.Ticker
 	authMode      string
 
-	escoTimer *time.Timer
-	loginPoll *time.Ticker
-	escoName  string
-	escoKnown bool
-	escoOK    bool
+	sdoTimer    *time.Timer
+	loginSystem string
+	expectHost  string
+	sdoScript   string
+	sdoCourse   string
+	escoTimer   *time.Timer
+	loginPoll   *time.Ticker
+	escoName    string
+	escoKnown   bool
+	escoOK      bool
+	sdoName     string
+	sdoKnown    bool
+	sdoOK       bool
 
 	OnState            func(prev, cur state.Engine)
 	OnStarted          func(url, title string)
@@ -121,14 +219,23 @@ type Engine struct {
 	OnMarked           func(url string)
 	OnPresence         func()
 	OnParticipants     func(count int)
+	OnMedia            func(action, kind, mic string, asked int)
+	OnSdoStatus        func(ok bool, name string, courses int)
+	OnLectureOver      func(reason string, now, peak int)
+	OnSdoCourses       func(courses []sdo.Course)
+	OnSdoLinks         func(course string, links []sdo.Link)
+	OnSdoActivities    func(items []sdo.WebinarActivity, info sdo.PageInfo)
+	OnSdoWebinars      func(rows []sdo.Webinar)
+	OnSdoJoin          func(url string)
 	OnAuthRequired     func(url string)
 	OnAttendance       func(status, text string)
 	OnEscoStatus       func(ok bool, name string)
-	OnEscoLoggedIn     func(name string)
+	OnLoggedIn         func(system, name string)
 	OnNicknameRequired func()
 	OnShutdown         func()
 	OnError            func(msg string)
 	OnPageLog          func(level, message string)
+	OnDiag             func(items []map[string]string, people []string, url string, frames int)
 }
 
 func New(view, auth *webview.View, h *hub.Hub, n *notify.Notifier, scripts string, dispatch func(func())) *Engine {
@@ -218,7 +325,7 @@ func (e *Engine) Start(raw string) {
 		e.Stop()
 	}
 	e.mu.Lock()
-	e.people = 0
+	e.people, e.peakPeople, e.lowStreak, e.overFired = 0, 0, 0, false
 	e.attendanceDone, e.joined = false, false
 	e.currentURL, e.currentTitle = u, "Трансляция"
 	e.startedAt = time.Now()
@@ -336,6 +443,16 @@ func (e *Engine) ResumeScanning() {
 	}
 }
 
+// DumpPage просит страницу трансляции рассказать о себе — для настройки поиска
+// участников и прочих элементов на живой лекции.
+func (e *Engine) DumpPage() bool {
+	if !e.sm.Active() {
+		return false
+	}
+	e.view.Eval(diagScript)
+	return true
+}
+
 func (e *Engine) PublishStatus() {
 	browser := "READY"
 	if e.sm.Active() {
@@ -404,14 +521,29 @@ func (e *Engine) onPageMessage(text string) {
 		if e.OnPresence != nil {
 			e.OnPresence()
 		}
+	case "media":
+		action, _ := m["action"].(string)
+		kind, _ := m["kind"].(string)
+		mic, _ := m["mic"].(string)
+		asked, _ := m["asked"].(float64)
+		if e.OnMedia != nil {
+			e.OnMedia(action, kind, mic, int(asked))
+		}
 	case "participants":
 		n, _ := m["count"].(float64)
-		e.mu.Lock()
-		changed := int(n) != e.people
-		e.people = int(n)
-		e.mu.Unlock()
-		if changed && e.OnParticipants != nil {
-			e.OnParticipants(int(n))
+		e.onParticipants(int(n))
+	case "ended":
+		text, _ := m["text"].(string)
+		e.lectureOver("страница сообщила о завершении: "+text, e.Participants(), 0)
+	case "diag":
+		var items []map[string]string
+		var people []string
+		decode(m["items"], &items)
+		decode(m["people"], &people)
+		u, _ := m["url"].(string)
+		frames, _ := m["frames"].(float64)
+		if e.OnDiag != nil {
+			e.OnDiag(items, people, u, int(frames))
 		}
 	case "qr":
 		u, _ := m["url"].(string)
@@ -438,6 +570,75 @@ func allowedHost(host string) bool {
 		}
 	}
 	return false
+}
+
+// Признаки того, что лекция кончилась: народ расходится. Ошибиться тут дорого,
+// поэтому уходим только когда людей было заметно много, мы уже долго внутри,
+// падение большое и подтвердилось не одним замером. Без отметки присутствия
+// порог выше — досрочный выход стоил бы пропуска.
+const (
+	crowdMinPeak       = 8
+	crowdMinInside     = 10 * time.Minute
+	crowdDropMarked    = 0.35
+	crowdDropUnmarked  = 0.50
+	crowdConfirmations = 2
+)
+
+func (e *Engine) onParticipants(n int) {
+	if n < 0 {
+		return
+	}
+	e.mu.Lock()
+	changed := n != e.people
+	e.people = n
+	peak, inside, marked, fired := e.peakPeople, time.Since(e.startedAt), e.attendanceDone, e.overFired
+	if n > e.peakPeople {
+		e.peakPeople, e.lowStreak = n, 0
+		peak = n
+	}
+	e.mu.Unlock()
+
+	if changed && e.OnParticipants != nil {
+		e.OnParticipants(n)
+	}
+	if fired || n >= peak || peak < crowdMinPeak || inside < crowdMinInside || e.sm.State() != state.Scanning {
+		return
+	}
+	limit := crowdDropUnmarked
+	if marked {
+		limit = crowdDropMarked
+	}
+	drop := float64(peak-n) / float64(peak)
+	if drop < limit {
+		e.mu.Lock()
+		e.lowStreak = 0
+		e.mu.Unlock()
+		return
+	}
+	e.mu.Lock()
+	e.lowStreak++
+	streak := e.lowStreak
+	e.mu.Unlock()
+	logger.Debugf(src, "Участников стало %d из %d (−%.0f%%), замер %d из %d", n, peak, drop*100, streak, crowdConfirmations)
+	if streak >= crowdConfirmations {
+		e.lectureOver(fmt.Sprintf("участников осталось %d из %d (−%.0f%%)", n, peak, drop*100), n, peak)
+	}
+}
+
+// lectureOver сообщает наружу один раз за сессию: решение отключаться принимает
+// приложение, движок только фиксирует признак.
+func (e *Engine) lectureOver(reason string, now, peak int) {
+	e.mu.Lock()
+	if e.overFired || !e.sm.Active() {
+		e.mu.Unlock()
+		return
+	}
+	e.overFired = true
+	e.mu.Unlock()
+	logger.Infof(src, "Похоже, лекция закончилась: %s", reason)
+	if e.OnLectureOver != nil {
+		e.OnLectureOver(reason, now, peak)
+	}
 }
 
 func (e *Engine) onQR(u string) {
@@ -519,6 +720,41 @@ func (e *Engine) onAuthNavigated(ok bool, status uint32) {
 		logger.Warnf("Отметка", "Страница отметки не загрузилась")
 		e.finishValidation(proto.TokenTimeout)
 	}
+	if strings.HasPrefix(mode, "sdo-") && mode != "sdo-join" {
+		e.mu.Lock()
+		script := e.sdoScript
+		e.mu.Unlock()
+		if !ok {
+			e.finishSdoScan(mode, nil)
+			return
+		}
+		time.AfterFunc(2*time.Second, func() {
+			e.dispatch(func() {
+				e.mu.Lock()
+				active := e.authMode == mode
+				e.mu.Unlock()
+				if active {
+					e.auth.Eval(script)
+				}
+			})
+		})
+	}
+	if mode == "sdo" {
+		if !ok {
+			e.finishSdoProbe(false, "", 0, true)
+			return
+		}
+		time.AfterFunc(1500*time.Millisecond, func() {
+			e.dispatch(func() {
+				e.mu.Lock()
+				active := e.authMode == "sdo"
+				e.mu.Unlock()
+				if active {
+					e.auth.Eval(sdoProbeScript)
+				}
+			})
+		})
+	}
 	if mode == "esco" {
 		if !ok {
 			e.finishEscoProbe(false, "", true)
@@ -542,6 +778,51 @@ func (e *Engine) onAuthMessage(text string) {
 	if json.Unmarshal([]byte(text), &m) != nil {
 		return
 	}
+	if t, _ := m["type"].(string); strings.HasPrefix(t, "sdo") && t != "sdo" {
+		mode := map[string]string{
+			"sdoCourses":    "sdo-courses",
+			"sdoLinks":      "sdo-links",
+			"sdoActivities": "sdo-activities",
+			"sdoWebinars":   "sdo-webinars",
+			"sdoJoin":       "sdo-join",
+		}[t]
+		if mode != "" {
+			e.finishSdoScan(mode, m)
+		}
+		return
+	}
+	if m["type"] == "sdo" {
+		name, _ := m["name"].(string)
+		courses, _ := m["courses"].(float64)
+		if host, _ := m["host"].(string); !e.fromExpectedPage(host) {
+			logger.Debugf("СДО", "Ответ пришёл со страницы %q — жду нужную", host)
+			return
+		}
+		e.mu.Lock()
+		loggingIn := e.authMode == "login" && e.loginSystem == "sdo"
+		e.mu.Unlock()
+		if loggingIn {
+			if m["result"] == "IN" {
+				e.mu.Lock()
+				e.sdoKnown, e.sdoOK, e.sdoName = true, true, name
+				e.mu.Unlock()
+				logger.Infof("СДО", "Вход выполнен%s — закрываю окно авторизации", nameSuffix(name))
+				if e.OnLoggedIn != nil {
+					e.OnLoggedIn("sdo", name)
+				}
+			}
+			return
+		}
+		switch m["result"] {
+		case "IN":
+			e.finishSdoProbe(true, name, int(courses), false)
+		case "OUT":
+			e.finishSdoProbe(false, "", 0, false)
+		default:
+			e.finishSdoProbe(false, "", 0, true)
+		}
+		return
+	}
 	if m["type"] == "esco" {
 		name, _ := m["name"].(string)
 		if host, _ := m["host"].(string); !allowedHost(host) {
@@ -550,16 +831,16 @@ func (e *Engine) onAuthMessage(text string) {
 			return
 		}
 		e.mu.Lock()
-		loggingIn := e.authMode == "login"
+		loggingIn := e.authMode == "login" && e.loginSystem != "sdo"
 		e.mu.Unlock()
 		if loggingIn {
 			if m["result"] == "IN" {
 				e.mu.Lock()
 				e.escoKnown, e.escoOK, e.escoName = true, true, name
 				e.mu.Unlock()
-				logger.Infof("ЕСКО", "Вход выполнен: %s — закрываю окно авторизации", name)
-				if e.OnEscoLoggedIn != nil {
-					e.OnEscoLoggedIn(name)
+				logger.Infof("Пульс", "Вход выполнен: %s — закрываю окно авторизации", name)
+				if e.OnLoggedIn != nil {
+					e.OnLoggedIn("pulse", name)
 				}
 			}
 			return
@@ -681,6 +962,85 @@ func (e *Engine) CheckEsco(u string) {
 	e.auth.Navigate(u)
 }
 
+// CheckSdo заходит в СДО в скрытой вкладке: сессия общая с ЕСКО, поэтому
+// отдельный вход не нужен — если он выполнен, система пустит сразу.
+func (e *Engine) CheckSdo(u string) bool {
+	e.mu.Lock()
+	if e.authMode != "" || e.validating {
+		e.mu.Unlock()
+		return false
+	}
+	e.authMode = "sdo"
+	e.expectHost = hostOf(u)
+	if e.sdoTimer != nil {
+		e.sdoTimer.Stop()
+	}
+	// СДО отвечает небыстро, поэтому ждём подольше: вкладку у проверки в любой
+	// момент может забрать поиск ссылки.
+	e.sdoTimer = time.AfterFunc(25*time.Second, func() {
+		e.dispatch(func() { e.finishSdoProbe(false, "", 0, true) })
+	})
+	e.mu.Unlock()
+
+	e.auth.SetVisible(false)
+	e.auth.Navigate(u)
+	return true
+}
+
+// hostOf — хост адреса; по нему отличаем ответ нужной страницы от ответа
+// about:blank, оставшегося от предыдущей навигации.
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil {
+		return strings.ToLower(u.Hostname())
+	}
+	return ""
+}
+
+// fromExpectedPage — пришёл ли ответ со страницы, которую мы открывали.
+func (e *Engine) fromExpectedPage(host string) bool {
+	e.mu.Lock()
+	want := e.expectHost
+	e.mu.Unlock()
+	if want == "" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(host), want)
+}
+
+func (e *Engine) finishSdoProbe(ok bool, name string, courses int, timeout bool) {
+	e.mu.Lock()
+	if e.authMode != "sdo" {
+		e.mu.Unlock()
+		return
+	}
+	e.authMode = ""
+	if e.sdoTimer != nil {
+		e.sdoTimer.Stop()
+		e.sdoTimer = nil
+	}
+	e.mu.Unlock()
+
+	e.auth.Navigate("about:blank")
+	switch {
+	case timeout:
+		logger.Debugf("СДО", "Состояние входа определить не удалось: страница не ответила или не дала признаков")
+	case ok:
+		logger.Infof("СДО", "Вход выполнен%s, курсов на странице: %d", nameSuffix(name), courses)
+	default:
+		logger.Infof("СДО", "Вход не выполнен — сначала войдите в ЕСКО МИРЭА")
+	}
+	if !timeout && e.OnSdoStatus != nil {
+		e.OnSdoStatus(ok, name, courses)
+	}
+}
+
+func nameSuffix(name string) string {
+	if name == "" {
+		return ""
+	}
+	return " (" + name + ")"
+}
+
 func (e *Engine) EscoStatus() (known, ok bool, name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -718,14 +1078,23 @@ func (e *Engine) finishEscoProbe(ok bool, name string, timeout bool) {
 	}
 }
 
-func (e *Engine) BeginLogin(u string) {
+// BeginLogin открывает страницу входа выбранной системы: "pulse" — ЕСКО
+// (отметки по QR), "sdo" — СДО (ссылки на лекции). Логины у них разные,
+// поэтому и кнопки разные.
+func (e *Engine) BeginLogin(u, system string) {
 	e.cancelValidation()
 	e.mu.Lock()
 	if e.escoTimer != nil {
 		e.escoTimer.Stop()
 		e.escoTimer = nil
 	}
+	if e.sdoTimer != nil {
+		e.sdoTimer.Stop()
+		e.sdoTimer = nil
+	}
+	e.loginSystem = system
 	e.authMode = "login"
+	e.expectHost = hostOf(u)
 	if e.loginPoll != nil {
 		e.loginPoll.Stop()
 	}
@@ -739,7 +1108,13 @@ func (e *Engine) BeginLogin(u string) {
 				active := e.authMode == "login"
 				e.mu.Unlock()
 				if active {
-					e.auth.Eval(escoProbeScript)
+					e.mu.Lock()
+					script := escoProbeScript
+					if e.loginSystem == "sdo" {
+						script = sdoProbeScript
+					}
+					e.mu.Unlock()
+					e.auth.Eval(script)
 				}
 			})
 		}
@@ -747,9 +1122,14 @@ func (e *Engine) BeginLogin(u string) {
 	e.auth.Navigate(u)
 }
 
+// LoginSystem — какую систему сейчас показываем пользователю.
+func (e *Engine) LoginSystem() string { e.mu.Lock(); defer e.mu.Unlock(); return e.loginSystem }
+
 func (e *Engine) EndLogin() {
 	e.mu.Lock()
 	e.authMode = ""
+	e.loginSystem = ""
+	e.expectHost = ""
 	if e.loginPoll != nil {
 		e.loginPoll.Stop()
 		e.loginPoll = nil

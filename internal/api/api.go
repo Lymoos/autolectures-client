@@ -36,13 +36,33 @@ func (c *Client) Get(path string) Result            { return c.do(http.MethodGet
 func (c *Client) Post(path string, body any) Result { return c.do(http.MethodPost, path, body) }
 func (c *Client) Put(path string, body any) Result  { return c.do(http.MethodPut, path, body) }
 
+// GetQuery и DeleteQuery — для адресов с параметрами: ?group=ИВБО-21-23.
+func (c *Client) GetQuery(path string, params map[string]string) Result {
+	return c.query(http.MethodGet, path, params, nil)
+}
+
+func (c *Client) DeleteQuery(path string, params map[string]string) Result {
+	return c.query(http.MethodDelete, path, params, nil)
+}
+
 func (c *Client) do(method, path string, body any) Result {
+	return c.query(method, path, nil, body)
+}
+
+func (c *Client) query(method, path string, params map[string]string, body any) Result {
 	base, err := url.Parse(config.Get().ServerURL())
 	if err != nil || base.Host == "" {
 		return Result{Err: "Некорректный адрес сервера"}
 	}
 	base.Path = path
 	base.RawQuery = ""
+	if len(params) > 0 {
+		q := url.Values{}
+		for k, v := range params {
+			q.Set(k, v)
+		}
+		base.RawQuery = q.Encode()
+	}
 
 	var payload io.Reader
 	if body != nil {

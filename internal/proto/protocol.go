@@ -11,9 +11,16 @@ const (
 	ApiSyncLinks    = "/api/v1/sync/links"
 	ApiTelegramCode = "/api/v1/telegram/link-code"
 	ApiTelegramStat = "/api/v1/telegram/status"
-	ApiStats        = "/api/v1/stats"
-	ApiVersion      = "/api/v1/version"
-	ApiHealth       = "/health"
+	// Пресет ссылок на курсы СДО для учебной группы: один раз собирает
+	// староста-администратор, остальным приходит готовым.
+	ApiSdoPreset = "/api/v1/sdo/preset"
+	// Пропущенные пары — для общей «стены» по группе.
+	ApiWallMiss = "/api/v1/wall/miss"
+	// Сводка пропусков по своей группе: week | month | semester.
+	ApiWall    = "/api/v1/wall"
+	ApiStats   = "/api/v1/stats"
+	ApiVersion = "/api/v1/version"
+	ApiHealth  = "/health"
 )
 
 const (

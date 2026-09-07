@@ -15,10 +15,26 @@
     setState: function (s) {
       for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) AL.state[k] = s[k];
       AL._listeners.forEach(function (cb) { try { cb(AL.state); } catch (e) { /* игнорируем */ } });
+      AL.relay(s);
     },
 
+    // Приложение выполняет скрипт только в главном документе, а плеер и форма
+    // входа живут в iframe. Каждый фрейм передаёт состояние своим детям.
+    relay: function (s) {
+      var frames = document.querySelectorAll('iframe, frame');
+      for (var i = 0; i < frames.length; i++) {
+        try { frames[i].contentWindow.postMessage({ __al: 'state', state: s }, '*'); } catch (e) { /* чужой origin */ }
+      }
+    },
+
+    // Мост приложения доступен только главному документу, поэтому из фреймов
+    // сообщения идут наверх по цепочке родителей.
     post: function (msg) {
-      try { window.chrome.webview.postMessage(JSON.stringify(msg)); } catch (e) { /* нет моста */ }
+      if (isTop) {
+        try { window.chrome.webview.postMessage(JSON.stringify(msg)); } catch (e) { /* нет моста */ }
+        return;
+      }
+      try { window.parent.postMessage({ __al: 'post', msg: msg }, '*'); } catch (e) { /* чужой origin */ }
     },
 
     log: function (level, msg) { AL.post({ type: 'log', level: level, message: String(msg) }); },
@@ -106,14 +122,45 @@
       return true;
     },
 
-    // Часть обработчиков слушает указательные события, а не click().
+    // Клик как от человека. Библиотеки вроде React Aria проверяют не только тип
+    // события: им нужны pointerType, isPrimary, кнопка мыши и координаты — без
+    // них нажатие просто игнорируется.
     realClick: function (el) {
-      var opts = { bubbles: true, cancelable: true, view: window };
-      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
-        var Ctor = (type.indexOf('pointer') === 0 && window.PointerEvent) ? PointerEvent : MouseEvent;
-        try { el.dispatchEvent(new Ctor(type, opts)); } catch (e) { /* игнорируем */ }
+      var r = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+      var x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+      function opts(extra) {
+        var o = { bubbles: true, cancelable: true, composed: true, view: window,
+                  clientX: x, clientY: y, screenX: x, screenY: y, button: 0, detail: 1 };
+        for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+        return o;
+      }
+      function pointer(type, buttons) {
+        if (!window.PointerEvent) return;
+        try {
+          el.dispatchEvent(new PointerEvent(type, opts({ pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: buttons, width: 1, height: 1, pressure: buttons ? 0.5 : 0 })));
+        } catch (e) { /* игнорируем */ }
+      }
+      function mouse(type, buttons) {
+        try { el.dispatchEvent(new MouseEvent(type, opts({ buttons: buttons }))); } catch (e) { /* игнорируем */ }
+      }
+      try { el.focus(); } catch (e) { /* игнорируем */ }
+      pointer('pointerover', 0); mouse('mouseover', 0); pointer('pointerenter', 0); mouse('mousemove', 0);
+      pointer('pointerdown', 1); mouse('mousedown', 1);
+      pointer('pointerup', 0); mouse('mouseup', 0);
+      var delivered = false;
+      try { delivered = el.dispatchEvent(new MouseEvent('click', opts({ buttons: 0 }))) || true; } catch (e) { /* игнорируем */ }
+      if (!delivered) { try { el.click(); } catch (e) { /* игнорируем */ } }
+    },
+
+    // Запасной путь для кнопок, которым мышь не подошла: с клавиатуры.
+    keyClick: function (el) {
+      try { el.focus(); } catch (e) { /* игнорируем */ }
+      ['Enter', ' '].forEach(function (key) {
+        var init = { bubbles: true, cancelable: true, key: key, code: key === 'Enter' ? 'Enter' : 'Space',
+                     keyCode: key === 'Enter' ? 13 : 32, which: key === 'Enter' ? 13 : 32 };
+        try { el.dispatchEvent(new KeyboardEvent('keydown', init)); } catch (e) { /* игнорируем */ }
+        try { el.dispatchEvent(new KeyboardEvent('keyup', init)); } catch (e) { /* игнорируем */ }
       });
-      try { el.click(); } catch (e) { /* игнорируем */ }
     },
 
     // Первый кликабельный элемент с подходящим текстом.
@@ -131,6 +178,27 @@
       return null;
     }
   };
+
+  // Состояние принимаем только от своего родителя: чужая страница не должна
+  // подменять имя участника или громкость.
+  function isChildFrame(w) {
+    var frames = document.querySelectorAll('iframe, frame');
+    for (var i = 0; i < frames.length; i++) {
+      try { if (frames[i].contentWindow === w) return true; } catch (e) { /* чужой origin */ }
+    }
+    return false;
+  }
+
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || !d.__al) return;
+    if (d.__al === 'state' && e.source === window.parent) {
+      AL.setState(d.state);
+      return;
+    }
+    // Пересылаем наверх только то, что пришло из собственных фреймов.
+    if (d.__al === 'post' && isChildFrame(e.source)) AL.post(d.msg);
+  });
 
   function start() {
     var cbs = AL._ready; AL._ready = [];
